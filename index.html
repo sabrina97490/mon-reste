@@ -121,6 +121,14 @@ label.l{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin
 .ehead{display:grid;grid-template-columns:1fr 92px 62px 34px;gap:6px;font-size:12px;color:var(--muted);margin:0 0 4px 2px}
 .ewhere{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}
 .ewhere button{white-space:nowrap}
+.elbl{display:flex;align-items:center;gap:8px;margin:-4px 0 12px}
+.elbl label{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.elbl .field{padding:7px 10px;font-size:14px;text-transform:uppercase;letter-spacing:.04em;max-width:170px}
+.lbl-code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;font-weight:650;letter-spacing:.04em;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.memo{margin-top:14px;padding:14px 16px;border-radius:16px;border:1.5px solid var(--ink);background:var(--surface)}
+.memo .t{display:block;font-weight:700;font-size:15px;margin-bottom:4px}
+.memo p{margin:0 0 10px;font-size:14px;color:var(--ink-2)}
+.memo .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ewhere button{font-size:12.5px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--muted)}
 .ewhere button[aria-pressed="true"]{color:var(--ink);border-color:var(--ink);font-weight:650}
 .grp{border-top:1px solid var(--line);padding-top:14px;margin-top:18px}
@@ -224,6 +232,10 @@ const fmt2=new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'});
 const eur=v=>fmt2.format(v).replace('-','−');
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,10);
+/* libellé à écrire sur le virement, pour que l'outil d'analyse le reconnaisse */
+function suggestLabel(name){const n=String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  return /voyage|ldd|reunion/.test(n)?'VOYAGE':/secours|livret a\b|livret-a/.test(n)?'SECOURS':/plaisir/.test(n)?'PLAISIR':/abo/.test(n)?'ABOS':/noel/.test(n)?'NOEL':''}
+const labelOf=i=>i.kind==='virement'?((i.label||'').trim()||suggestLabel(i.name)):'';
 const parseAmt=v=>{const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',','.'));return isFinite(n)?Math.round(n*100)/100:NaN};
 
 /* ---------- stockage (protégé : la page marche même si le navigateur refuse) ---------- */
@@ -292,11 +304,13 @@ function render(){
         <div class="r"><span>Encore à partir d'ici la paie</span><span>− ${eur(R.U)}</span></div>
         ${R.after.length?`<div class="r"><span>Achats notés depuis</span><span>− ${eur(R.N)}</span></div>`:''}
         <div class="r tot"><span>Disponible</span><span>${eur(R.dispo)}</span></div></div>
+      ${c.days<=3&&R.dispo>=1?`<div class="memo"><span class="t">Bientôt la paie</span><p>Vire ce qu'il te reste vers ton <b>Livret A</b> (épargne de secours), jusqu'à <b>${eur(R.dispo)}</b>. Garde une petite marge pour les derniers jours.</p>
+        <div class="row">Libellé : <span class="lbl-code">SURPLUS</span><button class="btn ghost sm" type="button" data-copy="SURPLUS">Copier</button></div></div>`:''}
       ${old?`<div class="stale${(c.t-day0(bd))/864e5>=3?' warn':''}">Solde du ${fmtD(bd,{weekday:'long',day:'numeric',month:'long'})}. Mets-le à jour pour un chiffre juste.</div>`:''}</div>`;
   }
   // à venir sur le compte courant
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed);
-  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${i.passed?'déjà passé':'à venir'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':''}<small>${i.passed?'passé':'le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}</small></span><span class="am">${eur(i.amount)}</span></button>`;
+  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${i.passed?'déjà passé':'à venir'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':''}<small>${i.passed?'passé':'le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am">${eur(i.amount)}</span></button>`;
   h+=`<section><h2>Encore à partir <small>${upc.length?eur(R.U):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
     <p class="hint">Un prélèvement est passé plus tôt ou plus tard que prévu ? Touche-le pour le cocher ou le décocher.</p></section>`;
   if(pas.length)h+=`<section><h2>Déjà passé <small>${eur(pas.reduce((s,i)=>s+i.amount,0))}</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
@@ -322,6 +336,7 @@ $('#app').addEventListener('click',e=>{
     if(want===auto)delete S.paid[c.key][it.id];else S.paid[c.key][it.id]=want;
     for(const k in S.paid)if(k<c.key)delete S.paid[k];
     save();render();toast(now?'Remis à venir':'Coché comme passé');return}
+  const cp=e.target.closest('[data-copy]');if(cp){copy(cp.dataset.copy,'« '+cp.dataset.copy+' » copié');return}
   const dn=e.target.closest('[data-delnote]');if(dn){const n=S.notes.find(x=>x.id===dn.dataset.delnote);if(!n||!confirm(`Supprimer « ${n.cat} · ${eur(n.amount)} » ?`))return;S.notes=S.notes.filter(x=>x!==n);(S.delNotes=S.delNotes||[]).push(n.id);save();render()}
 });
 
@@ -342,7 +357,8 @@ $('#fNote').addEventListener('submit',e=>{const v=parseAmt($('#noteAmt').value);
 
 /* réglages */
 function itemRow(i){return `<div data-id="${i.id}"><div class="erow"><input class="field" data-f="name" value="${esc(i.name)}" placeholder="ex. Loyer" aria-label="Nom"><input class="field" data-f="amount" inputmode="decimal" value="${i.amount?i.amount.toFixed(2).replace('.',','):''}" placeholder="0,00" aria-label="Montant"><input class="field" data-f="day" type="number" min="1" max="31" inputmode="numeric" value="${i.day||''}" placeholder="jour" aria-label="Jour du mois"><button class="x" data-delitem aria-label="Supprimer">✕</button></div>
-  <div class="ewhere"><button type="button" data-k="kind" data-v="charge" aria-pressed="${i.kind!=='virement'}">Charge</button><button type="button" data-k="kind" data-v="virement" aria-pressed="${i.kind==='virement'}">Virement</button><span style="width:8px"></span><button type="button" data-k="acct" data-v="courant" aria-pressed="${i.acct!=='revolut'}">Courant</button><button type="button" data-k="acct" data-v="revolut" aria-pressed="${i.acct==='revolut'}">Revolut</button></div></div>`}
+  <div class="ewhere"><button type="button" data-k="kind" data-v="charge" aria-pressed="${i.kind!=='virement'}">Charge</button><button type="button" data-k="kind" data-v="virement" aria-pressed="${i.kind==='virement'}">Virement</button><span style="width:8px"></span><button type="button" data-k="acct" data-v="courant" aria-pressed="${i.acct!=='revolut'}">Courant</button><button type="button" data-k="acct" data-v="revolut" aria-pressed="${i.acct==='revolut'}">Revolut</button></div>
+  ${i.kind==='virement'?`<div class="elbl"><label for="lb-${i.id}">Libellé du virement</label><input class="field" id="lb-${i.id}" data-f="label" maxlength="18" value="${esc(i.label||suggestLabel(i.name))}" placeholder="ex. VOYAGE" autocapitalize="characters"></div>`:''}</div>`}
 function renderItems(){const L=[...S.items].sort((a,b)=>(a.acct==='revolut')-(b.acct==='revolut')||a.day-b.day);$('#items').innerHTML=L.map(itemRow).join('')||'<p class="sub">Aucune ligne pour l\'instant.</p>'}
 function openSet(){$('#payIn').value=S.payday;renderItems();openD('#dSet')}
 $('#openSet').addEventListener('click',openSet);
@@ -351,12 +367,14 @@ $('#addItem').addEventListener('click',()=>{const i={id:uid(),name:'',amount:0,d
   if(!$('#items .erow'))$('#items').innerHTML='';$('#items').insertAdjacentHTML('beforeend',itemRow(i));const r=$(`#items [data-id="${i.id}"] [data-f="name"]`);r&&r.focus()});
 $('#items').addEventListener('change',e=>{const w=e.target.closest('[data-id]'),f=e.target.dataset.f;if(!w||!f)return;const it=S.items.find(i=>i.id===w.dataset.id);if(!it)return;
   if(f==='name')it.name=e.target.value.trim();
+  if(f==='label'){it.label=e.target.value.trim().toUpperCase().slice(0,18);e.target.value=it.label}
   if(f==='amount'){const v=parseAmt(e.target.value);it.amount=isNaN(v)?0:Math.abs(v)}
   if(f==='day'){const v=parseInt(e.target.value);it.day=Math.min(31,Math.max(1,v||1));e.target.value=it.day}
   save();render()});
 $('#items').addEventListener('click',e=>{const w=e.target.closest('[data-id]');if(!w)return;const it=S.items.find(i=>i.id===w.dataset.id);if(!it)return;
   if(e.target.closest('[data-delitem]')){S.items=S.items.filter(i=>i!==it);save();w.remove();render();return}
-  const b=e.target.closest('[data-k]');if(b){it[b.dataset.k]=b.dataset.v;$$(`[data-k="${b.dataset.k}"]`,w).forEach(x=>x.setAttribute('aria-pressed',x===b));save();render()}});
+  const b=e.target.closest('[data-k]');if(b){it[b.dataset.k]=b.dataset.v;
+    if(b.dataset.k==='kind'){w.outerHTML=itemRow(it)}else $$(`[data-k="${b.dataset.k}"]`,w).forEach(x=>x.setAttribute('aria-pressed',x===b));save();render()}});
 $('#dSet').addEventListener('close',()=>{S.items=S.items.filter(i=>i.name||i.amount);save();render()});
 
 function parseImport(txt){
@@ -366,7 +384,7 @@ function parseImport(txt){
   return L.length?{items:L}:null;
 }
 function doImport(replace){const d=parseImport($('#impTxt').value);if(!d){toast('Rien de lisible à importer');return}
-  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':'charge',acct:x.acct==='revolut'?'revolut':'courant'}));
+  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':'charge',label:x.label?String(x.label).toUpperCase().slice(0,18):'',acct:x.acct==='revolut'?'revolut':'courant'}));
   if(!L.length){toast('Rien de lisible à importer');return}
   if(replace&&S.items.length&&!confirm(`Remplacer tes ${S.items.length} lignes par les ${L.length} importées ?`))return;
   S.items=replace?L:[...S.items,...L];if(d.payday&&!S.items.length)S.payday=d.payday;S.paid={};save();$('#impTxt').value='';renderItems();render();toast(`${L.length} ligne${L.length>1?'s':''} importée${L.length>1?'s':''}`)}
