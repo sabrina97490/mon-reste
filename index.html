@@ -51,6 +51,7 @@ header .sub{font-size:13px;color:var(--muted)}
 .calc{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:14px}
 .calc .r{display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-2)}
 .calc .r span:last-child{font-variant-numeric:tabular-nums;color:var(--ink)}
+.calc .r.est{color:var(--ink);font-weight:600}
 .calc .r.tot{font-weight:700;color:var(--ink);border-top:1px dashed var(--line);margin-top:4px;padding-top:7px}
 .stale{margin-top:12px;font-size:13px;padding:9px 11px;border-radius:10px;background:var(--surface-2);color:var(--ink-2)}
 .stale.warn{color:var(--warn)}
@@ -317,20 +318,34 @@ function advance(id){const r=(S.rem||[]).find(x=>x.id===id);if(!r)return null;
 
 /* passé ou à venir : automatique selon la date, et tu peux corriger d'un tap */
 function isPassed(it,c){
-  const o=(S.paid[c.key]||{})[it.id];if(o!==undefined)return o;
+  const o=(S.paid[c.key]||{})[it.id];if(o!==undefined)return o!==false;
   return itemDate(it,c)<c.t;
+}
+/* Ce qui est passé est-il déjà dans le solde recopié ?
+   - coché à la main : oui seulement si tu l'as coché AVANT de recopier ton solde
+   - passé tout seul (date dépassée) : oui si sa date est avant le jour du solde */
+function inBalance(it,c,bal){
+  if(!bal||!isPassed(it,c))return false;
+  const o=(S.paid[c.key]||{})[it.id];
+  if(typeof o==='number')return o<=bal.at;
+  if(o===true)return true; /* ancienne coche (sans heure) : on la considère dans le solde, comme avant */
+  return itemDate(it,c)<day0(new Date(bal.at));
 }
 function compute(){
   const c=cycle(),items=S.items.filter(i=>i.amount>0&&i.day>=1);
   const L=items.map(i=>({...i,date:itemDate(i,c),passed:isPassed(i,c)})).sort((a,b)=>a.date-b.date||b.amount-a.amount);
   const cur=L.filter(i=>i.acct!=='revolut'),rev=L.filter(i=>i.acct==='revolut');
   const upcoming=cur.filter(i=>!i.passed),U=upcoming.filter(i=>i.kind!=='credit').reduce((s,i)=>s+i.amount,0),C=upcoming.filter(i=>i.kind==='credit').reduce((s,i)=>s+i.amount,0);
+  const sg=i=>i.kind==='credit'?-i.amount:i.amount;
   const notes=S.notes.filter(n=>n.at>=c.start.getTime()).sort((a,b)=>b.at-a.at);
   const bal=S.balance&&S.balance.at>=c.start.getTime()?S.balance:null; /* un solde d'avant la paie ne compte plus */
   const after=bal?notes.filter(n=>n.acct==='courant'&&n.at>bal.at):[];
   const N=after.reduce((s,n)=>s+n.amount,0);
-  const dispo=bal?bal.amount-U+C-N:null;
-  return{c,cur,rev,U,C,notes,after,N,dispo,bal};
+  /* passé depuis le solde recopié : pas encore dedans, on le retire */
+  cur.forEach(i=>{i.inBal=inBalance(i,c,bal)});
+  const since=bal?cur.filter(i=>i.passed&&!i.inBal):[],P=since.reduce((s,i)=>s+sg(i),0);
+  const dispo=bal?bal.amount-P-U+C-N:null;
+  return{c,cur,rev,U,C,since,P,notes,after,N,dispo,bal};
 }
 
 /* ---------- affichage ---------- */
@@ -355,6 +370,7 @@ function render(){
       <div class="per">${neg?'':`soit <b>${eur(R.dispo/days)}</b> par jour, `}jusqu'à la paie du ${fmtD(c.next,{day:'numeric',month:'long'})} <span style="color:var(--muted)">(${c.days} jour${c.days>1?'s':''})</span></div>
       ${neg?`<div class="alert">Il manquera ${eur(-R.dispo)} avant la paie. Ralentis, ou prévois de puiser dans ton épargne de secours.</div>`:''}
       <div class="calc"><div class="r"><span>Solde du ${fmtD(bd)} à ${bd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(b.amount)}</span></div>
+        ${R.since.length?`<div class="r"><span>Passé depuis</span><span>${R.P>=0?'−':'+'} ${eur(Math.abs(R.P))}</span></div><div class="r est"><span>Solde aujourd'hui (estimé)</span><span>${eur(b.amount-R.P)}</span></div>`:''}
         <div class="r"><span>Encore à partir d'ici la paie</span><span>− ${eur(R.U)}</span></div>
         ${R.C?`<div class="r"><span>Rentrées à venir</span><span>+ ${eur(R.C)}</span></div>`:''}
         ${R.after.length?`<div class="r"><span>Achats notés depuis</span><span>− ${eur(R.N)}</span></div>`:''}
@@ -371,12 +387,14 @@ function render(){
       <div class="row">${cur?`<button class="btn sm" type="button" data-rpay="${r.id}">C'est passé : déduire ${eur(r.amount)}</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Pas encore : changer la date</button><button class="linkbtn" type="button" data-rdone="${r.id}" style="font-size:13px">Déjà compté dans mon solde</button>`
         :`<button class="btn sm" type="button" data-rdone="${r.id}">C'est fait</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Changer la date</button>`}</div></div>`}).join('');
   // à venir sur le compte courant
-  const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed);
+  const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed&&(i.inBal||!R.bal));
   const cr=i=>i.kind==='credit';
   const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
   h+=`<section><h2>Encore à partir <small>${upc.length?'− '+eur(R.U)+' déduits'+(R.C?' · + '+eur(R.C)+' ajoutés':''):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
-    <p class="hint">Ce qui est à venir est déduit (ou ajouté si c'est une rentrée). Coche une ligne seulement quand tu la vois dans l'appli de ta banque : elle est alors déjà dans ton solde, l'appli ne la compte plus. Touche-la de nouveau pour la remettre à venir.</p></section>`;
-  if(pas.length)h+=`<section><h2>Déjà sur ton compte <small>dans ton solde</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
+    <p class="hint">Quand une ligne passe sur ton compte, touche-la : elle reste déduite de ton solde jusqu'à ce que tu le recopies à nouveau. Touche-la encore pour la remettre à venir.</p></section>`;
+  if(R.since.length)h+=`<section><h2>Passé depuis ton solde <small>${R.P>=0?'− ':'+ '}${eur(Math.abs(R.P))} déduits</small></h2><div class="list">${R.since.map(row).join('')}</div>
+    <p class="hint">Déjà sorti de ton compte, mais après le solde que tu as recopié : l'appli le retire elle-même. Recopie ton solde quand tu veux remettre les compteurs à zéro.</p></section>`;
+  if(pas.length)h+=`<section><h2>Déjà dans ton solde <small>${eur(pas.reduce((s,i)=>s+i.amount,0))}</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
   if(R.rev.length){const rv=R.rev.filter(i=>!i.passed);
     h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à venir':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
       <p class="hint">Payé depuis Revolut : n'est pas retiré de ton compte courant. Le virement qui alimente Revolut, lui, l'est.</p></section>`}
@@ -405,9 +423,9 @@ $('#app').addEventListener('click',e=>{
   const rk=e.target.closest('[data-rdone]');if(rk){const n=advance(rk.dataset.rdone);save();render();toast(n?'Prochain rappel le '+fmtD(n,{day:'numeric',month:'short',year:'numeric'}):'Rappel terminé');return}
   const t=e.target.closest('[data-tog]');if(t){const c=cycle(),it=S.items.find(i=>i.id===t.dataset.tog);if(!it)return;
     S.paid[c.key]=S.paid[c.key]||{};const now=isPassed(it,c),auto=itemDate(it,c)<c.t,want=!now;
-    if(want===auto)delete S.paid[c.key][it.id];else S.paid[c.key][it.id]=want;
+    if(!want&&!auto)delete S.paid[c.key][it.id];else S.paid[c.key][it.id]=want?Date.now():false;
     for(const k in S.paid)if(k<c.key)delete S.paid[k];
-    save();render();toast(it.acct==='revolut'?(now?'Remis à venir':'Coché comme passé'):it.kind==='credit'?(now?`${it.name} : à venir, ajouté à ton disponible`:`${it.name} : déjà reçu, il est dans ton solde`):now?`${it.name} : à venir, déduit de ton disponible`:`${it.name} : déjà retiré, il est dans ton solde`);return}
+    save();render();toast(it.acct==='revolut'?(now?'Remis à venir':'Coché comme passé'):now?`${it.name} : remis à venir`:`${it.name} : passé, ${it.kind==='credit'?'ajouté à':'retiré de'} ton solde`);return}
   const cp=e.target.closest('[data-copy]');if(cp){copy(cp.dataset.copy,'« '+cp.dataset.copy+' » copié');return}
   const dn=e.target.closest('[data-delnote]');if(dn){const n=S.notes.find(x=>x.id===dn.dataset.delnote);if(!n||!confirm(`Supprimer « ${n.cat} · ${eur(n.amount)} » ?`))return;S.notes=S.notes.filter(x=>x!==n);(S.delNotes=S.delNotes||[]).push(n.id);save();render()}
 });
