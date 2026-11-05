@@ -142,6 +142,24 @@ details.how{margin:6px 0 12px;font-size:13.5px;color:var(--ink-2)}
 details.how summary{cursor:pointer;font-weight:650;color:var(--ink)}
 details.how ol{margin:8px 0 0;padding-left:20px}
 details.how li{margin:4px 0}
+.due{margin-top:14px;padding:14px 16px;border-radius:16px;border:1.5px solid var(--warn);background:var(--surface);box-shadow:var(--shadow)}
+.due.late{border-color:var(--neg)}
+.due .t{display:flex;justify-content:space-between;gap:10px;font-weight:700;font-size:15.5px}
+.due .t span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+.due .d{font-size:13.5px;color:var(--ink-2);margin:2px 0 10px}
+.due.late .d b{color:var(--neg)}
+.due .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rm{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left}
+.rm:first-child{border-top:0}
+.rm .nm{font-size:15px;min-width:0}
+.rm .nm small{display:block;font-size:12.5px;color:var(--muted)}
+.rm .am{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}
+.rm.soon .nm small b{color:var(--warn);font-weight:650}
+.g2{display:grid;grid-template-columns:1.25fr 1fr;gap:10px}
+.g2 .field{min-width:0}
+input[type="date"].field{min-height:48px;-webkit-appearance:none;appearance:none}
+.calbox{margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--surface-2)}
+.calbox p{margin:6px 0 0;font-size:13px;color:var(--ink-2)}
 .foot{margin-top:28px;text-align:center;font-size:12.5px;color:var(--muted)}
 </style>
 </head>
@@ -183,6 +201,28 @@ details.how li{margin:4px 0}
     <button type="button" class="chip" data-acct="revolut" aria-pressed="false">Revolut</button>
   </div>
   <div class="acts"><button class="btn ghost" type="button" data-close>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>
+</form></dialog>
+
+<!-- Rappel -->
+<dialog id="dRem"><form method="dialog" class="sheet" id="fRem">
+  <h2 class="dt" id="remTitle">Nouveau rappel</h2>
+  <p class="sub">Un renouvellement, une résiliation à faire, une échéance…</p>
+  <label class="l" for="remName">Quoi ?</label>
+  <input class="field" id="remName" maxlength="60" placeholder="ex. Dashlane, résilier le VPS IONOS" autocomplete="off">
+  <div class="g2">
+    <div><label class="l" for="remDate">Date</label><input class="field" id="remDate" type="date"></div>
+    <div><label class="l" for="remAmt">Montant</label><input class="field" id="remAmt" inputmode="decimal" autocomplete="off" placeholder="facultatif"></div>
+  </div>
+  <label class="l">Revient</label>
+  <div class="chips" id="remRep"><button type="button" class="chip" data-v="an">Chaque année</button><button type="button" class="chip" data-v="mois">Chaque mois</button><button type="button" class="chip" data-v="une">Une seule fois</button></div>
+  <label class="l">Me prévenir combien de temps avant ?</label>
+  <div class="chips" id="remLead"><button type="button" class="chip" data-v="3">3 jours</button><button type="button" class="chip" data-v="7">1 semaine</button><button type="button" class="chip" data-v="14">2 semaines</button><button type="button" class="chip" data-v="30">1 mois</button></div>
+  <div id="remAcctW"><label class="l">Payé avec</label>
+  <div class="chips" id="remAcct"><button type="button" class="chip" data-v="courant">Compte courant</button><button type="button" class="chip" data-v="revolut">Revolut</button></div></div>
+  <div class="calbox"><button class="btn ghost sm" type="button" id="remCal">Ajouter à mon calendrier</button>
+    <p>Crée un événement avec une alerte dans le Calendrier de ton iPhone ou de ton PC : tu es prévenue même sans ouvrir l'appli.</p></div>
+  <div class="acts"><button class="btn ghost" type="button" data-close>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>
+  <div style="text-align:center;margin-top:14px"><button class="linkbtn" type="button" id="remDel" hidden>Supprimer ce rappel</button></div>
 </form></dialog>
 
 <!-- Réglages -->
@@ -239,12 +279,12 @@ const labelOf=i=>i.kind==='virement'?((i.label||'').trim()||suggestLabel(i.name)
 const parseAmt=v=>{const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',','.'));return isFinite(n)?Math.round(n*100)/100:NaN};
 
 /* ---------- stockage (protégé : la page marche même si le navigateur refuse) ---------- */
-function blank(){return{payday:28,items:[],balance:null,paid:{},notes:[],delNotes:[],cfgAt:0}}
+function blank(){return{payday:28,items:[],rem:[],balance:null,paid:{},notes:[],delNotes:[],cfgAt:0}}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.items))return Object.assign(blank(),d)}catch(e){}return blank()}
 let S=load();
 function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Impossible d\'enregistrer sur cet appareil')}}
 /* les réglages (liste, jour de paie, lignes cochées) portent une date : en synchro, les plus récents gagnent */
-const cfgSig=x=>JSON.stringify([x.items,x.payday,x.paid]);
+const cfgSig=x=>JSON.stringify([x.items,x.payday,x.paid,x.rem||[]]);
 let lastCfg=cfgSig(S);
 function save(){const sg=cfgSig(S);if(sg!==lastCfg){S.cfgAt=Date.now();lastCfg=sg}saveLocal();scheduleSync()}
 
@@ -260,6 +300,18 @@ function cycle(now=new Date()){
 }
 function itemDate(it,c){let d=at(c.start.getFullYear(),c.start.getMonth(),it.day);if(d<c.start)d=at(c.start.getFullYear(),c.start.getMonth()+1,it.day);return d}
 const fmtD=(d,o={day:'numeric',month:'short'})=>d.toLocaleDateString('fr-FR',o);
+
+/* ---------- rappels : renouvellements, résiliations, échéances ---------- */
+const pISO=t=>{const[y,m,d]=String(t).split('-').map(Number);return new Date(y,m-1,d)};
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const REP={an:'chaque année',mois:'chaque mois',une:'une fois'};
+function nextOf(r){const d=pISO(r.date),k=r.d0||d.getDate();return r.rep==='mois'?at(d.getFullYear(),d.getMonth()+1,k):at(d.getFullYear()+1,d.getMonth(),k)}
+function remList(){const t=day0(new Date());return(S.rem||[]).filter(r=>r&&r.date).map(r=>{const d=pISO(r.date);return{...r,d,left:Math.round((d-t)/864e5)}}).sort((a,b)=>a.d-b.d)}
+const whenTxt=l=>l===0?'aujourd\'hui':l===1?'demain':l>1?`dans ${l} jours`:l===-1?'hier':`il y a ${-l} jours`;
+/* une échéance traitée : la suivante prend le relais, ou le rappel disparaît s'il était unique */
+function advance(id){const r=(S.rem||[]).find(x=>x.id===id);if(!r)return null;
+  if(r.rep==='une'){S.rem=S.rem.filter(x=>x!==r);return null}
+  r.date=iso(nextOf(r));return pISO(r.date)}
 
 /* passé ou à venir : automatique selon la date, et tu peux corriger d'un tap */
 function isPassed(it,c){
@@ -308,6 +360,13 @@ function render(){
         <div class="row">Libellé : <span class="lbl-code">SURPLUS</span><button class="btn ghost sm" type="button" data-copy="SURPLUS">Copier</button></div></div>`:''}
       ${old?`<div class="stale${(c.t-day0(bd))/864e5>=3?' warn':''}">Solde du ${fmtD(bd,{weekday:'long',day:'numeric',month:'long'})}. Mets-le à jour pour un chiffre juste.</div>`:''}</div>`;
   }
+  // rappels arrivés à échéance (ou en approche)
+  const RL=remList(),dueL=RL.filter(r=>r.left<=(r.lead||14));
+  h+=dueL.map(r=>{const late=r.left<0,money=r.amount>0,cur=money&&r.acct!=='revolut';
+    return `<div class="due${late?' late':''}"><div class="t"><span>${esc(r.name)}${r.acct==='revolut'&&money?'<span class="tag rev">Revolut</span>':''}</span>${money?`<span>${eur(r.amount)}</span>`:''}</div>
+      <div class="d">${fmtD(r.d,{weekday:'long',day:'numeric',month:'long'})} · <b>${whenTxt(r.left)}</b></div>
+      <div class="row">${cur?`<button class="btn sm" type="button" data-rpay="${r.id}">C'est passé : déduire ${eur(r.amount)}</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Pas encore : changer la date</button><button class="linkbtn" type="button" data-rdone="${r.id}" style="font-size:13px">Déjà compté dans mon solde</button>`
+        :`<button class="btn sm" type="button" data-rdone="${r.id}">C'est fait</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Changer la date</button>`}</div></div>`}).join('');
   // à venir sur le compte courant
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed);
   const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${i.passed?'déjà passé':'à venir'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':''}<small>${i.passed?'passé':'le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am">${eur(i.amount)}</span></button>`;
@@ -317,6 +376,9 @@ function render(){
   if(R.rev.length){const rv=R.rev.filter(i=>!i.passed);
     h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à venir':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
       <p class="hint">Payé depuis Revolut : n'est pas retiré de ton compte courant. Le virement qui alimente Revolut, lui, l'est.</p></section>`}
+  // tous les rappels
+  h+=`<section><h2>Rappels <small>${RL.length?RL.length+' en tout':''}</small></h2><div class="list">${RL.map(r=>`<button class="rm${r.left<=(r.lead||14)?' soon':''}" type="button" data-redit="${r.id}"><span class="nm">${esc(r.name)}${r.acct==='revolut'&&r.amount>0?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(r.d,{day:'numeric',month:'short',year:'numeric'})} · ${r.left<=(r.lead||14)?`<b>${whenTxt(r.left)}</b>`:whenTxt(r.left)} · ${REP[r.rep]||REP.an}</small></span><span class="am">${r.amount>0?eur(r.amount):''}</span></button>`).join('')||'<div class="empty">Aucun rappel. Ajoute tes renouvellements annuels (Dashlane, domaines…) ou une résiliation à ne pas oublier.</div>'}</div>
+    <div style="margin-top:10px"><button class="btn ghost sm" type="button" data-act="rem">+ Ajouter un rappel</button></div></section>`;
   // achats notés
   const T=R.notes.reduce((s,n)=>s+n.amount,0);
   h+=`<section><h2>Mes achats notés <small>${R.notes.length?eur(T)+' ce mois-ci':''}</small></h2><div class="list">${R.notes.map(n=>{const d=new Date(n.at);return `<div class="note"><span class="nm"><b>${esc(n.cat)}</b>${n.acct==='revolut'?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(d,{weekday:'short',day:'numeric',month:'short'})}</small>${n.why?`<i>« ${esc(n.why)} »</i>`:''}</span><span class="am">${eur(n.amount)}</span><button class="x" data-delnote="${n.id}" aria-label="Supprimer">✕</button></div>`}).join('')||'<div class="empty">Aucun achat noté. Note ceux qui sortent de ta routine, pour te souvenir à la fin du mois de ce que tu as acheté, et pourquoi.</div>'}</div></section>`;
@@ -330,7 +392,13 @@ $$('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog')
 $$('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
 
 $('#app').addEventListener('click',e=>{
-  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='bal')openBal();if(a.dataset.act==='set')openSet();return}
+  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='bal')openBal();if(a.dataset.act==='set')openSet();if(a.dataset.act==='rem')openRem(null);return}
+  const re=e.target.closest('[data-redit]');if(re){openRem(re.dataset.redit);return}
+  const rd=e.target.closest('[data-rdate]');if(rd){openRem(rd.dataset.rdate,true);return}
+  const rp=e.target.closest('[data-rpay]');if(rp){const r=S.rem.find(x=>x.id===rp.dataset.rpay);if(!r)return;
+    S.notes.push({id:uid(),at:Date.now(),amount:r.amount,cat:'Renouvellement',why:r.name,acct:'courant'});
+    const n=advance(r.id);save();render();toast(`Déduit de ton disponible${n?' · prochain rappel le '+fmtD(n,{day:'numeric',month:'short',year:'numeric'}):''}`);return}
+  const rk=e.target.closest('[data-rdone]');if(rk){const n=advance(rk.dataset.rdone);save();render();toast(n?'Prochain rappel le '+fmtD(n,{day:'numeric',month:'short',year:'numeric'}):'Rappel terminé');return}
   const t=e.target.closest('[data-tog]');if(t){const c=cycle(),it=S.items.find(i=>i.id===t.dataset.tog);if(!it)return;
     S.paid[c.key]=S.paid[c.key]||{};const now=isPassed(it,c),auto=itemDate(it,c)<c.t,want=!now;
     if(want===auto)delete S.paid[c.key][it.id];else S.paid[c.key][it.id]=want;
@@ -354,6 +422,53 @@ $('#openNote').addEventListener('click',()=>{$('#noteAmt').value='';$('#noteWhy'
 $('#fNote').addEventListener('submit',e=>{const v=parseAmt($('#noteAmt').value);if(!(v>0)){e.preventDefault();toast('Indique un montant');return}
   S.notes.push({id:uid(),at:Date.now(),amount:v,cat:nCat,why:$('#noteWhy').value.trim(),acct:nAcct});
   const keep=Date.now()-400*864e5;S.notes=S.notes.filter(n=>n.at>keep);save();render();toast(nAcct==='courant'&&compute().bal?'Noté, et déduit de ton disponible':'Achat noté')});
+
+/* rappel : création / modification */
+let rEd=null,rRep='an',rLead=14,rAcct='courant';
+function paintRem(){$$('#remRep .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===rRep));$$('#remLead .chip').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.v===rLead));$$('#remAcct .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===rAcct))
+  $('#remAcctW').hidden=!(parseAmt($('#remAmt').value)>0)}
+function openRem(id,focusDate){const r=id?(S.rem||[]).find(x=>x.id===id):null;rEd=r?r.id:null;
+  $('#remTitle').textContent=r?'Modifier le rappel':'Nouveau rappel';$('#remDel').hidden=!r;
+  $('#remName').value=r?r.name:'';$('#remDate').value=r?r.date:'';$('#remAmt').value=r&&r.amount>0?r.amount.toFixed(2).replace('.',','):'';
+  rRep=r?r.rep||'an':'an';rLead=r?r.lead||14:14;rAcct=r?r.acct||'courant':'courant';paintRem();openD('#dRem');
+  setTimeout(()=>{const f=focusDate?$('#remDate'):(!r?$('#remName'):null);if(f){f.focus();if(focusDate&&f.showPicker)try{f.showPicker()}catch(e){}}},60)}
+$('#remRep').addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b){rRep=b.dataset.v;paintRem()}});
+$('#remLead').addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b){rLead=+b.dataset.v;paintRem()}});
+$('#remAcct').addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b){rAcct=b.dataset.v;paintRem()}});
+$('#remAmt').addEventListener('input',paintRem);
+function readRem(){const name=$('#remName').value.trim(),date=$('#remDate').value,v=parseAmt($('#remAmt').value);
+  if(!name){toast('Indique ce qu\'il faut faire');$('#remName').focus();return null}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){toast('Choisis une date');$('#remDate').focus();return null}
+  return{name:name.slice(0,60),date,amount:v>0?v:0,rep:rRep,lead:rLead,acct:rAcct,d0:pISO(date).getDate()}}
+$('#fRem').addEventListener('submit',e=>{const d=readRem();if(!d){e.preventDefault();return}
+  S.rem=S.rem||[];const r=rEd&&S.rem.find(x=>x.id===rEd);
+  if(r)Object.assign(r,d);else S.rem.push({id:uid(),...d});
+  save();render();toast(r?'Rappel modifié':'Rappel ajouté')});
+$('#remDel').addEventListener('click',()=>{const r=(S.rem||[]).find(x=>x.id===rEd);if(!r||!confirm(`Supprimer le rappel « ${r.name} » ?`))return;
+  S.rem=S.rem.filter(x=>x!==r);save();render();$('#dRem').close();toast('Rappel supprimé')});
+
+/* calendrier : un fichier .ics avec une alerte, que l'iPhone ou le PC ajoute à son Calendrier */
+function icsText(d,id){const x=t=>String(t).replace(/\\/g,'\\\\').replace(/[,;]/g,m=>'\\'+m).replace(/\n/g,'\\n');
+  const D=t=>t.replace(/-/g,''),start=pISO(d.date),end=new Date(start.getFullYear(),start.getMonth(),start.getDate()+1);
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'');
+  const title=d.name+(d.amount>0?' · '+eur(d.amount):'');
+  const rr=d.rep==='an'?'RRULE:FREQ=YEARLY':d.rep==='mois'?'RRULE:FREQ=MONTHLY':'';
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Mon reste//FR','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    `UID:${id||uid()}@mon-reste`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${D(d.date)}`,`DTEND;VALUE=DATE:${D(iso(end))}`,rr,
+    `SUMMARY:${x(title)}`,`DESCRIPTION:${x('Rappel Mon reste'+(d.amount>0?(d.acct==='revolut'?' · payé avec Revolut':' · payé avec le compte courant'):''))}`,'TRANSP:TRANSPARENT',
+    /* alerte à 9 h, X jours avant (événement sur la journée : il commence à minuit) */
+    'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${x(title)}`,`TRIGGER:-P${d.lead-1}DT15H`,'END:VALARM',
+    'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${x(title)}`,'TRIGGER:PT9H','END:VALARM',
+    'END:VEVENT','END:VCALENDAR'].filter(Boolean);
+  return L.join('\r\n')+'\r\n'}
+$('#remCal').addEventListener('click',async()=>{const d=readRem();if(!d)return;
+  const name='rappel-'+(d.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'mon-reste')+'.ics';
+  const txt=icsText(d,rEd),blob=new Blob([txt],{type:'text/calendar;charset=utf-8'});
+  /* appli installée sur iPhone : feuille de partage ; ailleurs, téléchargement du fichier */
+  const file=typeof File==='function'?new File([blob],name,{type:'text/calendar'}):null;
+  if(navigator.standalone&&file&&navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:d.name});return}catch(e){if(e&&e.name==='AbortError')return}}
+  const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
+  toast('Ouvre le fichier pour l\'ajouter à ton calendrier')});
 
 /* réglages */
 function itemRow(i){return `<div data-id="${i.id}"><div class="erow"><input class="field" data-f="name" value="${esc(i.name)}" placeholder="ex. Loyer" aria-label="Nom"><input class="field" data-f="amount" inputmode="decimal" value="${i.amount?i.amount.toFixed(2).replace('.',','):''}" placeholder="0,00" aria-label="Montant"><input class="field" data-f="day" type="number" min="1" max="31" inputmode="numeric" value="${i.day||''}" placeholder="jour" aria-label="Jour du mois"><button class="x" data-delitem aria-label="Supprimer">✕</button></div>
@@ -393,7 +508,7 @@ $('#impAdd').addEventListener('click',()=>doImport(false));
 
 async function copy(t,msg){try{await navigator.clipboard.writeText(t);toast(msg)}catch(e){prompt('Copie ce texte :',t)}}
 $('#bkCopy').addEventListener('click',()=>copy(JSON.stringify({app:'mon-reste',v:1,...S}),'Sauvegarde copiée : garde-la dans tes notes'));
-$('#bkLoad').addEventListener('click',()=>{const t=prompt('Colle ta sauvegarde :');if(!t)return;try{const d=JSON.parse(t);if(!d||!Array.isArray(d.items))throw 0;if(!confirm('Remplacer toutes les données de cet appareil par cette sauvegarde ?'))return;S=Object.assign(blank(),d);delete S.app;delete S.v;save();renderItems();$('#payIn').value=S.payday;render();toast('Sauvegarde restaurée')}catch(e){toast('Sauvegarde illisible')}});
+$('#bkLoad').addEventListener('click',()=>{const t=prompt('Colle ta sauvegarde :');if(!t)return;try{const d=JSON.parse(t);if(!d||!Array.isArray(d.items))throw 0;if(!confirm('Remplacer toutes les données de cet appareil par cette sauvegarde ?'))return;S=Object.assign(blank(),d);if(!Array.isArray(S.rem))S.rem=[];delete S.app;delete S.v;save();renderItems();$('#payIn').value=S.payday;render();toast('Sauvegarde restaurée')}catch(e){toast('Sauvegarde illisible')}});
 $('#notesCopy').addEventListener('click',()=>{const R=compute();if(!R.notes.length){toast('Aucun achat noté ce mois-ci');return}
   const t=`Mes achats notés, paie du ${fmtD(R.c.start)} → ${fmtD(R.c.next)} :\n`+[...R.notes].reverse().map(n=>`- ${new Date(n.at).toLocaleDateString('fr-FR')} · ${n.cat} · ${eur(n.amount)}${n.acct==='revolut'?' (Revolut)':''}${n.why?' · '+n.why:''}`).join('\n')+`\nTotal : ${eur(R.notes.reduce((s,n)=>s+n.amount,0))}`;
   copy(t,'Notes copiées')});
@@ -429,13 +544,13 @@ async function pullRemote(){const g=await gh('/gists/'+SY.gistId),f=g.files&&g.f
 /* fusion sans perte : les notes des deux appareils sont réunies, les suppressions suivies, le solde et les réglages les plus récents gagnent */
 function merge(a,b){
   const o={...a};
-  if((b.cfgAt||0)>(a.cfgAt||0)){o.items=b.items||[];o.payday=b.payday||28;o.paid=b.paid||{};o.cfgAt=b.cfgAt}
+  if((b.cfgAt||0)>(a.cfgAt||0)){o.items=b.items||[];o.payday=b.payday||28;o.paid=b.paid||{};if(Array.isArray(b.rem))o.rem=b.rem;o.cfgAt=b.cfgAt}
   if(b.balance&&(!a.balance||b.balance.at>a.balance.at))o.balance=b.balance;
   const del=new Set([...(a.delNotes||[]),...(b.delNotes||[])]),m=new Map();
   [...(a.notes||[]),...(b.notes||[])].forEach(n=>{if(n&&!del.has(n.id))m.set(n.id,n)});
   o.notes=[...m.values()].sort((x,y)=>x.at-y.at);o.delNotes=[...del].slice(-500);
   return o}
-const core=x=>JSON.stringify([x.items,x.payday,x.paid,x.cfgAt||0,x.balance,[...(x.notes||[])].sort((a,b)=>a.at-b.at||(a.id<b.id?-1:1)),[...(x.delNotes||[])].sort()]);
+const core=x=>JSON.stringify([x.items,x.payday,x.paid,x.rem||[],x.cfgAt||0,x.balance,[...(x.notes||[])].sort((a,b)=>a.at-b.at||(a.id<b.id?-1:1)),[...(x.delNotes||[])].sort()]);
 let syBusy=false,syAgain=false,syT;
 function scheduleSync(){if(!SY.token)return;clearTimeout(syT);syT=setTimeout(syncNow,1200)}
 async function syncNow(){
