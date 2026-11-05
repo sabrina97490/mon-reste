@@ -72,6 +72,8 @@ section h2 small{font-weight:500;color:var(--muted);font-size:13px}
 .tag{font-size:11px;font-weight:650;padding:2px 8px;border-radius:6px;margin-left:6px;vertical-align:1px}
 .tag.rev{color:var(--rev);border:1px solid color-mix(in srgb,var(--rev) 45%,transparent)}
 .tag.vir{color:var(--ink-2);border:1px solid var(--line)}
+.tag.in{color:var(--pos);border:1px solid color-mix(in srgb,var(--pos) 45%,transparent)}
+.it .am.in{color:var(--pos)}
 .empty{padding:16px 14px;color:var(--muted);font-size:14px}
 .hint{font-size:13px;color:var(--muted);margin:8px 2px 0}
 .note{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:11px 14px;border-top:1px solid var(--line)}
@@ -322,13 +324,13 @@ function compute(){
   const c=cycle(),items=S.items.filter(i=>i.amount>0&&i.day>=1);
   const L=items.map(i=>({...i,date:itemDate(i,c),passed:isPassed(i,c)})).sort((a,b)=>a.date-b.date||b.amount-a.amount);
   const cur=L.filter(i=>i.acct!=='revolut'),rev=L.filter(i=>i.acct==='revolut');
-  const upcoming=cur.filter(i=>!i.passed),U=upcoming.reduce((s,i)=>s+i.amount,0);
+  const upcoming=cur.filter(i=>!i.passed),U=upcoming.filter(i=>i.kind!=='credit').reduce((s,i)=>s+i.amount,0),C=upcoming.filter(i=>i.kind==='credit').reduce((s,i)=>s+i.amount,0);
   const notes=S.notes.filter(n=>n.at>=c.start.getTime()).sort((a,b)=>b.at-a.at);
   const bal=S.balance&&S.balance.at>=c.start.getTime()?S.balance:null; /* un solde d'avant la paie ne compte plus */
   const after=bal?notes.filter(n=>n.acct==='courant'&&n.at>bal.at):[];
   const N=after.reduce((s,n)=>s+n.amount,0);
-  const dispo=bal?bal.amount-U-N:null;
-  return{c,cur,rev,U,notes,after,N,dispo,bal};
+  const dispo=bal?bal.amount-U+C-N:null;
+  return{c,cur,rev,U,C,notes,after,N,dispo,bal};
 }
 
 /* ---------- affichage ---------- */
@@ -354,6 +356,7 @@ function render(){
       ${neg?`<div class="alert">Il manquera ${eur(-R.dispo)} avant la paie. Ralentis, ou prévois de puiser dans ton épargne de secours.</div>`:''}
       <div class="calc"><div class="r"><span>Solde du ${fmtD(bd)} à ${bd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(b.amount)}</span></div>
         <div class="r"><span>Encore à partir d'ici la paie</span><span>− ${eur(R.U)}</span></div>
+        ${R.C?`<div class="r"><span>Rentrées à venir</span><span>+ ${eur(R.C)}</span></div>`:''}
         ${R.after.length?`<div class="r"><span>Achats notés depuis</span><span>− ${eur(R.N)}</span></div>`:''}
         <div class="r tot"><span>Disponible</span><span>${eur(R.dispo)}</span></div></div>
       ${c.days<=3&&R.dispo>=1?`<div class="memo"><span class="t">Bientôt la paie</span><p>Vire ce qu'il te reste vers ton <b>Livret A</b> (épargne de secours), jusqu'à <b>${eur(R.dispo)}</b>. Garde une petite marge pour les derniers jours.</p>
@@ -369,10 +372,11 @@ function render(){
         :`<button class="btn sm" type="button" data-rdone="${r.id}">C'est fait</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Changer la date</button>`}</div></div>`}).join('');
   // à venir sur le compte courant
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed);
-  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${i.passed?'déjà passé':'à venir'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':''}<small>${i.passed?'passé':'le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am">${eur(i.amount)}</span></button>`;
-  h+=`<section><h2>Encore à partir <small>${upc.length?eur(R.U):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
-    <p class="hint">Un prélèvement est passé plus tôt ou plus tard que prévu ? Touche-le pour le cocher ou le décocher.</p></section>`;
-  if(pas.length)h+=`<section><h2>Déjà passé <small>${eur(pas.reduce((s,i)=>s+i.amount,0))}</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
+  const cr=i=>i.kind==='credit';
+  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
+  h+=`<section><h2>Encore à partir <small>${upc.length?'− '+eur(R.U)+' déduits'+(R.C?' · + '+eur(R.C)+' ajoutés':''):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
+    <p class="hint">Ce qui est à venir est déduit (ou ajouté si c'est une rentrée). Coche une ligne seulement quand tu la vois dans l'appli de ta banque : elle est alors déjà dans ton solde, l'appli ne la compte plus. Touche-la de nouveau pour la remettre à venir.</p></section>`;
+  if(pas.length)h+=`<section><h2>Déjà sur ton compte <small>dans ton solde</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
   if(R.rev.length){const rv=R.rev.filter(i=>!i.passed);
     h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à venir':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
       <p class="hint">Payé depuis Revolut : n'est pas retiré de ton compte courant. Le virement qui alimente Revolut, lui, l'est.</p></section>`}
@@ -403,7 +407,7 @@ $('#app').addEventListener('click',e=>{
     S.paid[c.key]=S.paid[c.key]||{};const now=isPassed(it,c),auto=itemDate(it,c)<c.t,want=!now;
     if(want===auto)delete S.paid[c.key][it.id];else S.paid[c.key][it.id]=want;
     for(const k in S.paid)if(k<c.key)delete S.paid[k];
-    save();render();toast(now?'Remis à venir':'Coché comme passé');return}
+    save();render();toast(it.acct==='revolut'?(now?'Remis à venir':'Coché comme passé'):it.kind==='credit'?(now?`${it.name} : à venir, ajouté à ton disponible`:`${it.name} : déjà reçu, il est dans ton solde`):now?`${it.name} : à venir, déduit de ton disponible`:`${it.name} : déjà retiré, il est dans ton solde`);return}
   const cp=e.target.closest('[data-copy]');if(cp){copy(cp.dataset.copy,'« '+cp.dataset.copy+' » copié');return}
   const dn=e.target.closest('[data-delnote]');if(dn){const n=S.notes.find(x=>x.id===dn.dataset.delnote);if(!n||!confirm(`Supprimer « ${n.cat} · ${eur(n.amount)} » ?`))return;S.notes=S.notes.filter(x=>x!==n);(S.delNotes=S.delNotes||[]).push(n.id);save();render()}
 });
@@ -472,7 +476,7 @@ $('#remCal').addEventListener('click',async()=>{const d=readRem();if(!d)return;
 
 /* réglages */
 function itemRow(i){return `<div data-id="${i.id}"><div class="erow"><input class="field" data-f="name" value="${esc(i.name)}" placeholder="ex. Loyer" aria-label="Nom"><input class="field" data-f="amount" inputmode="decimal" value="${i.amount?i.amount.toFixed(2).replace('.',','):''}" placeholder="0,00" aria-label="Montant"><input class="field" data-f="day" type="number" min="1" max="31" inputmode="numeric" value="${i.day||''}" placeholder="jour" aria-label="Jour du mois"><button class="x" data-delitem aria-label="Supprimer">✕</button></div>
-  <div class="ewhere"><button type="button" data-k="kind" data-v="charge" aria-pressed="${i.kind!=='virement'}">Charge</button><button type="button" data-k="kind" data-v="virement" aria-pressed="${i.kind==='virement'}">Virement</button><span style="width:8px"></span><button type="button" data-k="acct" data-v="courant" aria-pressed="${i.acct!=='revolut'}">Courant</button><button type="button" data-k="acct" data-v="revolut" aria-pressed="${i.acct==='revolut'}">Revolut</button></div>
+  <div class="ewhere"><button type="button" data-k="kind" data-v="charge" aria-pressed="${i.kind!=='virement'&&i.kind!=='credit'}">Charge</button><button type="button" data-k="kind" data-v="virement" aria-pressed="${i.kind==='virement'}">Virement</button><button type="button" data-k="kind" data-v="credit" aria-pressed="${i.kind==='credit'}">Rentrée</button><span style="width:8px"></span><button type="button" data-k="acct" data-v="courant" aria-pressed="${i.acct!=='revolut'}">Courant</button><button type="button" data-k="acct" data-v="revolut" aria-pressed="${i.acct==='revolut'}">Revolut</button></div>
   ${i.kind==='virement'?`<div class="elbl"><label for="lb-${i.id}">Libellé du virement</label><input class="field" id="lb-${i.id}" data-f="label" maxlength="18" value="${esc(i.label||suggestLabel(i.name))}" placeholder="ex. VOYAGE" autocapitalize="characters"></div>`:''}</div>`}
 function renderItems(){const L=[...S.items].sort((a,b)=>(a.acct==='revolut')-(b.acct==='revolut')||a.day-b.day);$('#items').innerHTML=L.map(itemRow).join('')||'<p class="sub">Aucune ligne pour l\'instant.</p>'}
 function openSet(){$('#payIn').value=S.payday;renderItems();openD('#dSet')}
@@ -508,7 +512,7 @@ function doImport(replace,remOnly){const d=parseImport($('#impTxt').value);if(!d
   if(RN.length){S.rem=[...(S.rem||[]),...RN]}
   if(!(d.items||[]).length){if(!RN.length){toast((d.rem||[]).length?'Ces rappels sont déjà dans ta liste':'Rien de lisible à importer');return}
     save();$('#impTxt').value='';render();toast(`${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`);return}
-  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':'charge',label:x.label?String(x.label).toUpperCase().slice(0,18):'',acct:x.acct==='revolut'?'revolut':'courant'}));
+  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':x.kind==='credit'?'credit':'charge',label:x.label?String(x.label).toUpperCase().slice(0,18):'',acct:x.acct==='revolut'?'revolut':'courant'}));
   if(!L.length){if(RN.length){save();$('#impTxt').value='';render();toast(`${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`)}else toast('Rien de lisible à importer');return}
   if(replace&&S.items.length&&!confirm(`Remplacer tes ${S.items.length} lignes par les ${L.length} importées ?`))return;
   S.items=replace?L:[...S.items,...L];if(d.payday&&!S.items.length)S.payday=d.payday;S.paid={};save();$('#impTxt').value='';renderItems();render();toast(`${L.length} ligne${L.length>1?'s':''} importée${L.length>1?'s':''}${RN.length?` · ${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`:''}`)}
