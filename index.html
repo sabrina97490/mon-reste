@@ -123,6 +123,9 @@ label.l{display:block;font-size:13.5px;font-weight:650;color:var(--ink-2);margin
 .erow{display:grid;grid-template-columns:1fr 92px 62px 34px;gap:6px;align-items:center;margin-bottom:6px}
 .erow .field{padding:9px 10px;font-size:15px}
 .erow .sel{padding:9px 6px}
+.egrp{margin:18px 0 8px;font-size:14px}
+.egrp small{font-weight:400;color:var(--muted);font-size:12.5px;margin-left:6px}
+.msel{width:auto;padding:5px 8px;font-size:13px;border-radius:99px}
 .ehead{display:grid;grid-template-columns:1fr 92px 62px 34px;gap:6px;font-size:12px;color:var(--muted);margin:0 0 4px 2px}
 .ewhere{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}
 .ewhere button{white-space:nowrap}
@@ -242,7 +245,7 @@ input[type="date"].field{min-height:48px;-webkit-appearance:none;appearance:none
     <p class="sub" style="margin-bottom:10px">Charges fixes, virements d'épargne, abonnements. Le jour, c'est le jour habituel du prélèvement.</p>
     <div class="ehead"><span>Nom</span><span>Montant</span><span>Jour</span><span></span></div>
     <div id="items"></div>
-    <button class="btn ghost sm" id="addItem" type="button">+ Ajouter une ligne</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" id="addItem" type="button">+ Ajouter une ligne</button><button class="btn ghost sm" id="convRem" type="button" hidden></button></div>
   </div>
 
   <div class="grp">
@@ -303,7 +306,12 @@ function cycle(now=new Date()){
   const next=at(start.getFullYear(),start.getMonth()+1,P);
   return{t,start,next,key:start.toISOString().slice(0,10),days:Math.round((next-t)/864e5)};
 }
-function itemDate(it,c){let d=at(c.start.getFullYear(),c.start.getMonth(),it.day);if(d<c.start)d=at(c.start.getFullYear(),c.start.getMonth()+1,it.day);return d}
+const MOIS=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+function itemDate(it,c){
+  if(it.freq==='an'){const m=(it.month||1)-1,y=c.start.getFullYear();
+    for(const yy of [y-1,y,y+1]){const d=at(yy,m,it.day);if(d>=c.start&&d<c.next)return d}
+    return null} /* pas ce mois-ci */
+  let d=at(c.start.getFullYear(),c.start.getMonth(),it.day);if(d<c.start)d=at(c.start.getFullYear(),c.start.getMonth()+1,it.day);return d}
 const fmtD=(d,o={day:'numeric',month:'short'})=>d.toLocaleDateString('fr-FR',o);
 
 /* ---------- rappels : renouvellements, résiliations, échéances ---------- */
@@ -334,7 +342,7 @@ function inBalance(it,c,bal){
   return itemDate(it,c)<day0(new Date(bal.at));
 }
 function compute(){
-  const c=cycle(),items=S.items.filter(i=>i.amount>0&&i.day>=1);
+  const c=cycle(),items=S.items.filter(i=>i.amount>0&&i.day>=1&&itemDate(i,c));
   const L=items.map(i=>({...i,date:itemDate(i,c),passed:isPassed(i,c)})).sort((a,b)=>a.date-b.date||b.amount-a.amount);
   /* un virement marqué Revolut = virement du compte courant VERS Revolut : il sort du courant et arrive sur Revolut */
   const isTr=i=>i.kind==='virement'&&i.acct==='revolut';
@@ -392,7 +400,7 @@ function render(){
   }
   // rappels arrivés à échéance (ou en approche)
   const RL=remList(),dueL=RL.filter(r=>r.left<=(r.lead||14));
-  h+=dueL.map(r=>{const late=r.left<0,money=r.amount>0,cur=money&&r.acct!=='revolut';
+  h+=dueL.map(r=>{const late=r.left<0,money=r.amount>0,linked=S.items.some(i=>i.freq==='an'&&nkey(i.name)===nkey(r.name)),cur=money&&r.acct!=='revolut'&&!linked;
     return `<div class="due${late?' late':''}"><div class="t"><span>${esc(r.name)}${r.acct==='revolut'&&money?'<span class="tag rev">Revolut</span>':''}</span>${money?`<span>${eur(r.amount)}</span>`:''}</div>
       <div class="d">${fmtD(r.d,{weekday:'long',day:'numeric',month:'long'})} · <b>${whenTxt(r.left)}</b></div>
       <div class="row">${cur?`<button class="btn sm" type="button" data-rpay="${r.id}">C'est passé : déduire ${eur(r.amount)}</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Pas encore : changer la date</button><button class="linkbtn" type="button" data-rdone="${r.id}" style="font-size:13px">Déjà compté dans mon solde</button>`
@@ -400,7 +408,7 @@ function render(){
   // à venir sur le compte courant
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed&&(i.inBal||!R.bal));
   const cr=i=>i.kind==='credit'||(i.tr&&i.inRev);
-  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.tr?`<span class="tag vir">${i.inRev?'arrivée du courant':'vers Revolut'}</span>`:i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
+  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.freq==='an'?'<span class="tag vir">annuel</span>':''}${i.tr?`<span class="tag vir">${i.inRev?'arrivée du courant':'vers Revolut'}</span>`:i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
   h+=`<section><h2>Encore à partir <small>${upc.length?'− '+eur(R.U)+' déduits'+(R.C?' · + '+eur(R.C)+' ajoutés':''):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
     <p class="hint">Quand une ligne passe sur ton compte, touche-la : elle reste déduite de ton solde jusqu'à ce que tu le recopies à nouveau. Touche-la encore pour la remettre à venir.</p></section>`;
   if(R.since.length)h+=`<section><h2>Passé depuis ton solde <small>${R.P>=0?'− ':'+ '}${eur(Math.abs(R.P))} déduits</small></h2><div class="list">${R.since.map(row).join('')}</div>
@@ -521,11 +529,20 @@ $('#remCal').addEventListener('click',async()=>{const d=readRem();if(!d)return;
 /* réglages */
 function itemRow(i){return `<div data-id="${i.id}"><div class="erow"><input class="field" data-f="name" value="${esc(i.name)}" placeholder="ex. Loyer" aria-label="Nom"><input class="field" data-f="amount" inputmode="decimal" value="${i.amount?i.amount.toFixed(2).replace('.',','):''}" placeholder="0,00" aria-label="Montant"><input class="field" data-f="day" type="number" min="1" max="31" inputmode="numeric" value="${i.day||''}" placeholder="jour" aria-label="Jour du mois"><button class="x" data-delitem aria-label="Supprimer">✕</button></div>
   <div class="ewhere"><button type="button" data-k="kind" data-v="charge" aria-pressed="${i.kind!=='virement'&&i.kind!=='credit'}">Charge</button><button type="button" data-k="kind" data-v="virement" aria-pressed="${i.kind==='virement'}">Virement</button><button type="button" data-k="kind" data-v="credit" aria-pressed="${i.kind==='credit'}">Rentrée</button><span style="width:8px"></span><button type="button" data-k="acct" data-v="courant" aria-pressed="${i.acct!=='revolut'}">Courant</button><button type="button" data-k="acct" data-v="revolut" aria-pressed="${i.acct==='revolut'}">Revolut</button></div>
+  <div class="ewhere"><button type="button" data-k="freq" data-v="mois" aria-pressed="${i.freq!=='an'}">Chaque mois</button><button type="button" data-k="freq" data-v="an" aria-pressed="${i.freq==='an'}">Chaque année</button>${i.freq==='an'?`<select class="field msel" data-f="month" aria-label="Mois">${MOIS.map((m,k)=>`<option value="${k+1}"${(i.month||1)===k+1?' selected':''}>en ${m}</option>`).join('')}</select>`:''}</div>
   ${i.kind==='virement'?`<div class="elbl"><label for="lb-${i.id}">Libellé du virement</label><input class="field" id="lb-${i.id}" data-f="label" maxlength="18" value="${esc(i.label||suggestLabel(i.name))}" placeholder="ex. VOYAGE" autocapitalize="characters"></div>`:''}</div>`}
-function renderItems(){const L=[...S.items].sort((a,b)=>(a.acct==='revolut')-(b.acct==='revolut')||a.day-b.day);$('#items').innerHTML=L.map(itemRow).join('')||'<p class="sub">Aucune ligne pour l\'instant.</p>'}
+function renderItems(){const M=S.items.filter(i=>i.freq!=='an').sort((a,b)=>(a.acct==='revolut')-(b.acct==='revolut')||a.day-b.day),A=S.items.filter(i=>i.freq==='an').sort((a,b)=>(a.month||1)-(b.month||1)||a.day-b.day);
+  $('#items').innerHTML=(M.map(itemRow).join('')+(A.length?`<h4 class="egrp">Une fois par an <small>apparaît seulement le mois où ça tombe</small></h4>`+A.map(itemRow).join(''):''))||'<p class="sub">Aucune ligne pour l\'instant.</p>';renderConv()}
+/* rappels annuels avec montant → lignes annuelles (sans doublon) */
+const nkey=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const remToConvert=()=>(S.rem||[]).filter(r=>r.rep==='an'&&r.amount>0&&!S.items.some(i=>i.freq==='an'&&nkey(i.name)===nkey(r.name)));
+function renderConv(){const n=remToConvert().length,b=$('#convRem');if(b){b.hidden=!n;b.textContent=`Ajouter mes ${n} rappel${n>1?'s':''} annuel${n>1?'s':''} à cette liste`}}
 function openSet(){$('#payIn').value=S.payday;renderItems();openD('#dSet')}
 $('#openSet').addEventListener('click',openSet);
 $('#payIn').addEventListener('change',e=>{const v=Math.min(31,Math.max(1,parseInt(e.target.value)||28));e.target.value=v;S.payday=v;S.paid={};save();render()});
+$('#convRem').addEventListener('click',()=>{const L=remToConvert();if(!L.length)return;
+  L.forEach(r=>{const d=pISO(r.date);S.items.push({id:uid(),name:r.name,amount:r.amount,day:d.getDate(),month:d.getMonth()+1,freq:'an',kind:'charge',acct:r.acct==='revolut'?'revolut':'courant'})});
+  save();renderItems();render();toast(`${L.length} ligne${L.length>1?'s':''} annuelle${L.length>1?'s':''} ajoutée${L.length>1?'s':''}`)});
 $('#addItem').addEventListener('click',()=>{const i={id:uid(),name:'',amount:0,day:1,kind:'charge',acct:'courant'};S.items.push(i);save();
   if(!$('#items .erow'))$('#items').innerHTML='';$('#items').insertAdjacentHTML('beforeend',itemRow(i));const r=$(`#items [data-id="${i.id}"] [data-f="name"]`);r&&r.focus()});
 $('#items').addEventListener('change',e=>{const w=e.target.closest('[data-id]'),f=e.target.dataset.f;if(!w||!f)return;const it=S.items.find(i=>i.id===w.dataset.id);if(!it)return;
@@ -533,11 +550,13 @@ $('#items').addEventListener('change',e=>{const w=e.target.closest('[data-id]'),
   if(f==='label'){it.label=e.target.value.trim().toUpperCase().slice(0,18);e.target.value=it.label}
   if(f==='amount'){const v=parseAmt(e.target.value);it.amount=isNaN(v)?0:Math.abs(v)}
   if(f==='day'){const v=parseInt(e.target.value);it.day=Math.min(31,Math.max(1,v||1));e.target.value=it.day}
+  if(f==='month'){it.month=Math.min(12,Math.max(1,parseInt(e.target.value)||1))}
   save();render()});
 $('#items').addEventListener('click',e=>{const w=e.target.closest('[data-id]');if(!w)return;const it=S.items.find(i=>i.id===w.dataset.id);if(!it)return;
   if(e.target.closest('[data-delitem]')){S.items=S.items.filter(i=>i!==it);save();w.remove();render();return}
   const b=e.target.closest('[data-k]');if(b){it[b.dataset.k]=b.dataset.v;
-    if(b.dataset.k==='kind'){w.outerHTML=itemRow(it)}else $$(`[data-k="${b.dataset.k}"]`,w).forEach(x=>x.setAttribute('aria-pressed',x===b));save();render()}});
+    if(b.dataset.k==='freq'&&b.dataset.v==='an'&&!it.month)it.month=new Date().getMonth()+1;
+    if(b.dataset.k==='kind'){w.outerHTML=itemRow(it)}else if(b.dataset.k==='freq'){renderItems()}else $$(`[data-k="${b.dataset.k}"]`,w).forEach(x=>x.setAttribute('aria-pressed',x===b));save();render()}});
 $('#dSet').addEventListener('close',()=>{S.items=S.items.filter(i=>i.name||i.amount);save();render()});
 
 function parseImport(txt){
@@ -556,7 +575,7 @@ function doImport(replace,remOnly){const d=parseImport($('#impTxt').value);if(!d
   if(RN.length){S.rem=[...(S.rem||[]),...RN]}
   if(!(d.items||[]).length){if(!RN.length){toast((d.rem||[]).length?'Ces rappels sont déjà dans ta liste':'Rien de lisible à importer');return}
     save();$('#impTxt').value='';render();toast(`${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`);return}
-  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':x.kind==='credit'?'credit':'charge',label:x.label?String(x.label).toUpperCase().slice(0,18):'',acct:x.acct==='revolut'?'revolut':'courant'}));
+  const L=d.items.filter(x=>x&&x.name&&parseAmt(x.amount)>0).map(x=>({id:uid(),name:String(x.name).slice(0,60),amount:Math.abs(parseAmt(x.amount)),day:Math.min(31,Math.max(1,parseInt(x.day)||1)),kind:x.kind==='virement'?'virement':x.kind==='credit'?'credit':'charge',freq:x.freq==='an'?'an':undefined,month:x.month?Math.min(12,Math.max(1,parseInt(x.month)||1)):undefined,label:x.label?String(x.label).toUpperCase().slice(0,18):'',acct:x.acct==='revolut'?'revolut':'courant'}));
   if(!L.length){if(RN.length){save();$('#impTxt').value='';render();toast(`${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`)}else toast('Rien de lisible à importer');return}
   if(replace&&S.items.length&&!confirm(`Remplacer tes ${S.items.length} lignes par les ${L.length} importées ?`))return;
   S.items=replace?L:[...S.items,...L];if(d.payday&&!S.items.length)S.payday=d.payday;S.paid={};save();$('#impTxt').value='';renderItems();render();toast(`${L.length} ligne${L.length>1?'s':''} importée${L.length>1?'s':''}${RN.length?` · ${RN.length} rappel${RN.length>1?'s':''} ajouté${RN.length>1?'s':''}`:''}`)}
