@@ -402,7 +402,9 @@ async function unseal(p){if(!p||p.app!=='mon-reste'||!p.data)throw new Error('fo
   catch(e){throw new Error('phrase')}}
 async function gh(path,opt={}){
   const r=await fetch('https://api.github.com'+path,{...opt,cache:'no-store',headers:{Authorization:'Bearer '+SY.token,Accept:'application/vnd.github+json','Content-Type':'application/json'}});
-  if(r.status===401)throw new Error('jeton');if(r.status===403||r.status===404)throw new Error('droits');if(!r.ok)throw new Error('http');return r.json()}
+  if(r.ok)return r.json();
+  let msg='';try{msg=(await r.json()).message||''}catch(e){}
+  const er=new Error(r.status===401?'jeton':r.status===403||r.status===404||r.status===422?'droits':'http');er.code=r.status;er.detail=msg;throw er}
 async function findGist(){for(let pg=1;pg<=5;pg++){const L=await gh(`/gists?per_page=100&page=${pg}`);const g=L.find(x=>x.description===GDESC&&x.files&&x.files[GFILE]);if(g)return g;if(L.length<100)return null}return null}
 async function pullRemote(){const g=await gh('/gists/'+SY.gistId),f=g.files&&g.files[GFILE];if(!f)return null;
   const txt=f.truncated?await (await fetch(f.raw_url,{cache:'no-store'})).text():f.content;return unseal(JSON.parse(txt))}
@@ -431,18 +433,20 @@ async function syncNow(){
       if(SY.gistId)await gh('/gists/'+SY.gistId,{method:'PATCH',body:JSON.stringify({files:{[GFILE]:{content}}})});
       else{const g=await gh('/gists',{method:'POST',body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content}}})});SY.gistId=g.id}
     }
-    SY.last=Date.now();SY.err=null;
-  }catch(e){SY.err=e.message==='jeton'?'jeton':e.message==='phrase'?'phrase':e.message==='droits'?'droits':'reseau'}
+    SY.last=Date.now();SY.err=null;SY.errInfo='';
+  }catch(e){SY.err=e.message==='jeton'?'jeton':e.message==='phrase'?'phrase':e.message==='droits'?'droits':e.message==='http'?'http':'reseau';
+    SY.errInfo=(e.code?'code '+e.code:'')+(e.detail?' · '+e.detail:'')+(!e.code&&SY.err==='reseau'?String(e.message||e).slice(0,80):'')}
   finally{syBusy=false;saveSync();renderSync();if(syAgain){syAgain=false;syncNow()}}
 }
-const ERR={jeton:'Le jeton GitHub est refusé (expiré ou faux). Colle un nouveau jeton.',phrase:'La phrase secrète ne correspond pas à celle de ton autre appareil. Rien n\'a été envoyé.',droits:'Le jeton n\'a pas le droit « gist ». Crée-en un avec cette case cochée.',reseau:'Pas de connexion pour l\'instant. La synchro reprendra toute seule.'};
+let setupErr='',setupVals={};
+const ERR={http:'GitHub a renvoyé une erreur inattendue.',jeton:'Le jeton GitHub est refusé (expiré ou faux). Colle un nouveau jeton.',phrase:'La phrase secrète ne correspond pas à celle de ton autre appareil. Rien n\'a été envoyé.',droits:'Le jeton n\'a pas le droit « gist ». Crée-en un avec cette case cochée.',reseau:'Pas de connexion pour l\'instant. La synchro reprendra toute seule.'};
 function renderSync(){
   const box=$('#syncBox'),foot=$('#foot');
   const when=SY.last?new Date(SY.last).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):null;
   if(foot)foot.textContent=SY.token?(SY.err&&SY.err!=='reseau'?'Synchro en pause : ouvre les Réglages.':`Chiffré et synchronisé${when?' · '+when:''}`):'Tes chiffres restent sur cet appareil. Rien n\'est envoyé.';
   if(!box)return;
   if(SY.token){
-    box.innerHTML=`<div class="sync-on${SY.err&&SY.err!=='reseau'?' err':''}"><span class="dot"></span><span>${SY.err?esc(ERR[SY.err]||'Erreur de synchro'):`Synchro active${when?' · dernière à '+when:''}`}</span></div>
+    box.innerHTML=`<div class="sync-on${SY.err&&SY.err!=='reseau'?' err':''}"><span class="dot"></span><span>${SY.err?esc((ERR[SY.err]||'Erreur de synchro')+(SY.errInfo?` (${SY.errInfo})`:'')):`Synchro active${when?' · dernière à '+when:''}`}</span></div>
       ${SY.err==='jeton'||SY.err==='droits'?`<input class="field" id="syTok2" type="password" autocomplete="off" placeholder="Nouveau jeton GitHub" style="margin-bottom:8px">`:''}
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" type="button" id="syNow">${SY.err==='jeton'||SY.err==='droits'?'Enregistrer et synchroniser':'Synchroniser maintenant'}</button><button class="btn ghost sm" type="button" id="syOff">Désactiver sur cet appareil</button></div>`;
   }else{
@@ -454,17 +458,19 @@ function renderSync(){
       <input class="field" id="syTok" type="password" autocomplete="off" placeholder="Jeton GitHub (ghp_…)" style="margin-bottom:8px">
       <input class="field" id="syPass" type="password" autocomplete="new-password" placeholder="Phrase secrète" style="margin-bottom:8px">
       <p class="hint" style="margin:0 0 10px">La <b>même</b> sur ton PC et ton iPhone. Choisis une phrase longue que tu retiens, par exemple trois mots et un nombre. <b>Si tu l'oublies, personne ne pourra la retrouver</b>, mais les données de cet appareil restent intactes.</p>
+      ${setupErr?`<div class="sync-on err" style="margin:0 0 10px"><span class="dot"></span><span>${esc(setupErr)}</span></div>`:''}
       <button class="btn sm" type="button" id="syOn">Activer la synchro</button>`;
+    $('#syTok').value=setupVals.t||'';$('#syPass').value=setupVals.p||'';
   }
 }
 $('#syncBox').addEventListener('click',async e=>{
   if(e.target.id==='syOn'){const t=$('#syTok').value.trim(),pw=$('#syPass').value;
     if(!/^(ghp_|github_pat_|gho_)/.test(t)){toast('Ce jeton ne ressemble pas à un jeton GitHub');return}
     if(pw.length<8){toast('Phrase secrète trop courte (8 caractères minimum)');return}
-    SY={token:t,pass:pw};keyCache={};if(S.items.length&&!S.cfgAt){S.cfgAt=Date.now();saveLocal()}
+    setupVals={t,p:pw};setupErr='';SY={token:t,pass:pw};keyCache={};if(S.items.length&&!S.cfgAt){S.cfgAt=Date.now();saveLocal()}
     saveSync();renderSync();toast('Synchro en cours…');await syncNow();
-    if(!SY.err){toast('Synchro activée');renderItems();$('#payIn').value=S.payday}
-    else if(SY.err==='phrase'||SY.err==='jeton'||SY.err==='droits'){const er=SY.err;SY={};saveSync();renderSync();toast(ERR[er])}}
+    if(!SY.err){setupVals={};toast('Synchro activée');renderItems();$('#payIn').value=S.payday}
+    else if(SY.err!=='reseau'){setupErr=(ERR[SY.err]||'Erreur')+(SY.errInfo?` (${SY.errInfo})`:'');SY={};saveSync();renderSync()}}
   if(e.target.id==='syNow'){const t2=$('#syTok2');if(t2&&t2.value.trim())SY.token=t2.value.trim();SY.err=null;saveSync();await syncNow();if(!SY.err){toast('Synchronisé');renderItems();$('#payIn').value=S.payday}}
   if(e.target.id==='syOff'){if(!confirm('Arrêter la synchro sur cet appareil ? Tes données restent ici, et sur tes autres appareils.'))return;SY={};saveSync();renderSync();toast('Synchro désactivée sur cet appareil')}
 });
