@@ -52,6 +52,8 @@ header .sub{font-size:13px;color:var(--muted)}
 .calc .r{display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-2)}
 .calc .r span:last-child{font-variant-numeric:tabular-nums;color:var(--ink)}
 .calc .r.est{color:var(--ink);font-weight:600}
+.rbox{margin-top:10px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.calc .r.tot.neg span{color:var(--neg)}
 .calc .r.tot{font-weight:700;color:var(--ink);border-top:1px dashed var(--line);margin-top:4px;padding-top:7px}
 .stale{margin-top:12px;font-size:13px;padding:9px 11px;border-radius:10px;background:var(--surface-2);color:var(--ink-2)}
 .stale.warn{color:var(--warn)}
@@ -183,8 +185,8 @@ input[type="date"].field{min-height:48px;-webkit-appearance:none;appearance:none
 
 <!-- Solde -->
 <dialog id="dBal"><form method="dialog" class="sheet" id="fBal">
-  <h2 class="dt">Ton solde du compte courant</h2>
-  <p class="sub">Ouvre l'appli de ta banque et recopie le solde affiché, tel quel.</p>
+  <h2 class="dt" id="balTitle">Ton solde du compte courant</h2>
+  <p class="sub" id="balSub">Ouvre l'appli de ta banque et recopie le solde affiché, tel quel.</p>
   <input class="field amt" id="balIn" inputmode="decimal" autocomplete="off" placeholder="0,00 €" aria-label="Solde du compte courant">
   <div class="acts"><button class="btn ghost" value="cancel" type="button" data-close>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>
 </form></dialog>
@@ -282,7 +284,7 @@ const labelOf=i=>i.kind==='virement'?((i.label||'').trim()||suggestLabel(i.name)
 const parseAmt=v=>{const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',','.'));return isFinite(n)?Math.round(n*100)/100:NaN};
 
 /* ---------- stockage (protégé : la page marche même si le navigateur refuse) ---------- */
-function blank(){return{payday:28,items:[],rem:[],balance:null,paid:{},notes:[],delNotes:[],cfgAt:0}}
+function blank(){return{payday:28,items:[],rem:[],balance:null,revBal:null,paid:{},notes:[],delNotes:[],cfgAt:0}}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.items))return Object.assign(blank(),d)}catch(e){}return blank()}
 let S=load();
 function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Impossible d\'enregistrer sur cet appareil')}}
@@ -334,9 +336,11 @@ function inBalance(it,c,bal){
 function compute(){
   const c=cycle(),items=S.items.filter(i=>i.amount>0&&i.day>=1);
   const L=items.map(i=>({...i,date:itemDate(i,c),passed:isPassed(i,c)})).sort((a,b)=>a.date-b.date||b.amount-a.amount);
-  const cur=L.filter(i=>i.acct!=='revolut'),rev=L.filter(i=>i.acct==='revolut');
+  /* un virement marqué Revolut = virement du compte courant VERS Revolut : il sort du courant et arrive sur Revolut */
+  const isTr=i=>i.kind==='virement'&&i.acct==='revolut';
+  const cur=L.filter(i=>i.acct!=='revolut'||isTr(i)).map(i=>({...i,tr:isTr(i)})),rev=L.filter(i=>i.acct==='revolut').map(i=>({...i,tr:isTr(i),inRev:true}));
   const upcoming=cur.filter(i=>!i.passed),U=upcoming.filter(i=>i.kind!=='credit').reduce((s,i)=>s+i.amount,0),C=upcoming.filter(i=>i.kind==='credit').reduce((s,i)=>s+i.amount,0);
-  const sg=i=>i.kind==='credit'?-i.amount:i.amount;
+  const sg=i=>i.kind==='credit'?-i.amount:i.amount,sgR=i=>i.tr||i.kind==='credit'?-i.amount:i.amount;
   const notes=S.notes.filter(n=>n.at>=c.start.getTime()).sort((a,b)=>b.at-a.at);
   const bal=S.balance&&S.balance.at>=c.start.getTime()?S.balance:null; /* un solde d'avant la paie ne compte plus */
   const after=bal?notes.filter(n=>n.acct==='courant'&&n.at>bal.at):[];
@@ -345,7 +349,14 @@ function compute(){
   cur.forEach(i=>{i.inBal=inBalance(i,c,bal)});
   const since=bal?cur.filter(i=>i.passed&&!i.inBal):[],P=since.reduce((s,i)=>s+sg(i),0);
   const dispo=bal?bal.amount-P-U+C-N:null;
-  return{c,cur,rev,U,C,since,P,notes,after,N,dispo,bal};
+  /* Revolut : même logique, avec son propre solde */
+  const rb=S.revBal&&S.revBal.at>=c.start.getTime()?S.revBal:null;
+  rev.forEach(i=>{i.inBal=inBalance(i,c,rb)});
+  const rUp=rev.filter(i=>!i.passed),rU=rUp.reduce((s,i)=>s+sgR(i),0),rIn=rUp.filter(i=>sgR(i)<0).reduce((s,i)=>s+i.amount,0);
+  const rSince=rb?rev.filter(i=>i.passed&&!i.inBal):[],rP=rSince.reduce((s,i)=>s+sgR(i),0);
+  const rAfter=rb?notes.filter(n=>n.acct==='revolut'&&n.at>rb.at):[],rN=rAfter.reduce((s,n)=>s+n.amount,0);
+  const rDispo=rb?rb.amount-rP-rU-rN:null;
+  return{c,cur,rev,U,C,since,P,notes,after,N,dispo,bal,rb,rU,rIn,rSince,rP,rAfter,rN,rDispo};
 }
 
 /* ---------- affichage ---------- */
@@ -388,15 +399,25 @@ function render(){
         :`<button class="btn sm" type="button" data-rdone="${r.id}">C'est fait</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Changer la date</button>`}</div></div>`}).join('');
   // à venir sur le compte courant
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed&&(i.inBal||!R.bal));
-  const cr=i=>i.kind==='credit';
-  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
+  const cr=i=>i.kind==='credit'||(i.tr&&i.inRev);
+  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.tr?`<span class="tag vir">${i.inRev?'arrivée du courant':'vers Revolut'}</span>`:i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
   h+=`<section><h2>Encore à partir <small>${upc.length?'− '+eur(R.U)+' déduits'+(R.C?' · + '+eur(R.C)+' ajoutés':''):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
     <p class="hint">Quand une ligne passe sur ton compte, touche-la : elle reste déduite de ton solde jusqu'à ce que tu le recopies à nouveau. Touche-la encore pour la remettre à venir.</p></section>`;
   if(R.since.length)h+=`<section><h2>Passé depuis ton solde <small>${R.P>=0?'− ':'+ '}${eur(Math.abs(R.P))} déduits</small></h2><div class="list">${R.since.map(row).join('')}</div>
     <p class="hint">Déjà sorti de ton compte, mais après le solde que tu as recopié : l'appli le retire elle-même. Recopie ton solde quand tu veux remettre les compteurs à zéro.</p></section>`;
-  if(pas.length)h+=`<section><h2>Déjà dans ton solde <small>${eur(pas.reduce((s,i)=>s+i.amount,0))}</small></h2><div class="list">${pas.map(row).join('')}</div></section>`;
-  if(R.rev.length){const rv=R.rev.filter(i=>!i.passed);
-    h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à venir':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
+  if(pas.length)h+=`<section><h2>Déjà dans ton solde</h2><div class="list">${pas.map(row).join('')}</div></section>`;
+  if(R.rev.length){const rv=R.rev.filter(i=>!i.passed&&!i.tr);
+    h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à payer':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
+      ${R.rb?`<div class="rbox"><div class="calc" style="margin-top:0;padding-top:0;border-top:0">
+          <div class="r"><span>Solde Revolut du ${fmtD(new Date(R.rb.at))} à ${new Date(R.rb.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(R.rb.amount)}</span></div>
+          ${R.rSince.length?`<div class="r"><span>Passé depuis</span><span>${R.rP>=0?'−':'+'} ${eur(Math.abs(R.rP))}</span></div>`:''}
+          ${R.rIn?`<div class="r"><span>Virement à venir depuis le courant</span><span>+ ${eur(R.rIn)}</span></div>`:''}
+          <div class="r"><span>Abonnements encore à payer</span><span>− ${eur(R.rU+R.rIn)}</span></div>
+          ${R.rAfter.length?`<div class="r"><span>Achats Revolut notés depuis</span><span>− ${eur(R.rN)}</span></div>`:''}
+          <div class="r tot${R.rDispo<0?' neg':''}"><span>Reste sur Revolut</span><span>${eur(R.rDispo)}</span></div></div>
+          ${R.rDispo<0?`<div class="alert">Il manquera ${eur(-R.rDispo)} sur Revolut pour tes abonnements. Prévois un virement.</div>`:''}
+          <button class="btn ghost sm" type="button" data-act="rbal" style="margin-top:10px">Mettre à jour mon solde Revolut</button></div>`
+        :`<div class="rbox"><p style="margin:0 0 10px;font-size:14px;color:var(--ink-2)">${S.revBal?'Nouvelle paie : recopie ton solde Revolut.':'Ajoute ton solde Revolut pour voir ce qu\'il y restera après tes abonnements.'}</p><button class="btn ghost sm" type="button" data-act="rbal">+ Mon solde Revolut</button></div>`}
       <p class="hint">Payé depuis Revolut : n'est pas retiré de ton compte courant. Le virement qui alimente Revolut, lui, l'est.</p></section>`}
   // tous les rappels
   h+=`<section><h2>Rappels <small>${RL.length?RL.length+' en tout':''}</small></h2><div class="list">${RL.map(r=>`<button class="rm${r.left<=(r.lead||14)?' soon':''}" type="button" data-redit="${r.id}"><span class="nm">${esc(r.name)}${r.acct==='revolut'&&r.amount>0?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(r.d,{day:'numeric',month:'short',year:'numeric'})} · ${r.left<=(r.lead||14)?`<b>${whenTxt(r.left)}</b>`:whenTxt(r.left)} · ${REP[r.rep]||REP.an}</small></span><span class="am">${r.amount>0?eur(r.amount):''}</span></button>`).join('')||'<div class="empty">Aucun rappel. Tes renouvellements annuels arrivent tout seuls depuis Mes dépenses (Réglages › Importer). Tu peux aussi en ajouter un à la main.</div>'}</div>
@@ -414,7 +435,7 @@ $$('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog')
 $$('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
 
 $('#app').addEventListener('click',e=>{
-  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='bal')openBal();if(a.dataset.act==='set')openSet();if(a.dataset.act==='rem')openRem(null);return}
+  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='bal')openBal();if(a.dataset.act==='rbal')openBal('rev');if(a.dataset.act==='set')openSet();if(a.dataset.act==='rem')openRem(null);return}
   const re=e.target.closest('[data-redit]');if(re){openRem(re.dataset.redit);return}
   const rd=e.target.closest('[data-rdate]');if(rd){openRem(rd.dataset.rdate,true);return}
   const rp=e.target.closest('[data-rpay]');if(rp){const r=S.rem.find(x=>x.id===rp.dataset.rpay);if(!r)return;
@@ -430,10 +451,15 @@ $('#app').addEventListener('click',e=>{
   const dn=e.target.closest('[data-delnote]');if(dn){const n=S.notes.find(x=>x.id===dn.dataset.delnote);if(!n||!confirm(`Supprimer « ${n.cat} · ${eur(n.amount)} » ?`))return;S.notes=S.notes.filter(x=>x!==n);(S.delNotes=S.delNotes||[]).push(n.id);save();render()}
 });
 
-function openBal(){$('#balIn').value=S.balance?S.balance.amount.toFixed(2).replace('.',','):'';openD('#dBal');setTimeout(()=>$('#balIn').select(),50)}
-$('#openBal').addEventListener('click',openBal);
+let balKind='cur';
+function openBal(kind){balKind=kind==='rev'?'rev':'cur';const B=balKind==='rev'?S.revBal:S.balance;
+  $('#balTitle').textContent=balKind==='rev'?'Ton solde Revolut':'Ton solde du compte courant';
+  $('#balSub').textContent=balKind==='rev'?'Ouvre l\'appli Revolut et recopie le solde affiché, tel quel.':'Ouvre l\'appli de ta banque et recopie le solde affiché, tel quel.';
+  $('#balIn').setAttribute('aria-label',$('#balTitle').textContent);
+  $('#balIn').value=B?B.amount.toFixed(2).replace('.',','):'';openD('#dBal');setTimeout(()=>$('#balIn').select(),50)}
+$('#openBal').addEventListener('click',()=>openBal());
 $('#fBal').addEventListener('submit',e=>{const v=parseAmt($('#balIn').value);if(isNaN(v)){e.preventDefault();toast('Montant invalide');return}
-  S.balance={amount:v,at:Date.now()};save();render();toast('Solde enregistré')});
+  if(balKind==='rev')S.revBal={amount:v,at:Date.now()};else S.balance={amount:v,at:Date.now()};save();render();toast(balKind==='rev'?'Solde Revolut enregistré':'Solde enregistré')});
 
 let nCat=CATS[0],nAcct='courant';
 $('#noteCat').innerHTML=CATS.map(c=>`<button type="button" class="chip" data-cat="${c}">${c}</button>`).join('');
@@ -546,7 +572,7 @@ $('#notesCopy').addEventListener('click',()=>{const R=compute();if(!R.notes.leng
   copy(t,'Notes copiées')});
 
 /* rafraîchir au retour sur l'appli (le jour a pu changer) */
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){S=load();lastCfg=cfgSig(S);render();syncNow()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){S=load();lastCfg=cfgSig(S);render();syncNow(true)}});
 /* ================= Synchro chiffrée via un gist GitHub ================= */
 const SKEY='mon-reste-sync',GFILE='mon-reste.json',GDESC='mon-reste-sync';
 function loadSync(){try{return JSON.parse(localStorage.getItem(SKEY))||{}}catch(e){return{}}}
@@ -565,29 +591,49 @@ async function seal(obj){if(!SY.salt)SY.salt=b64(crypto.getRandomValues(new Uint
 async function unseal(p){if(!p||p.app!=='mon-reste'||!p.data)throw new Error('format');
   try{const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(p.iv)},await keyFor(SY.pass,p.salt),unb64(p.data));SY.salt=p.salt;return JSON.parse(tdec.decode(pt))}
   catch(e){throw new Error('phrase')}}
-async function gh(path,opt={}){
-  const r=await fetch('https://api.github.com'+path,{...opt,cache:'no-store',headers:{Authorization:'Bearer '+SY.token,Accept:'application/vnd.github+json','Content-Type':'application/json'}});
-  if(r.ok)return r.json();
+async function ghRaw(path,opt={},extra={}){
+  const r=await fetch('https://api.github.com'+path,{...opt,cache:'no-store',headers:{Authorization:'Bearer '+SY.token,Accept:'application/vnd.github+json','Content-Type':'application/json',...extra}});
+  if(r.ok||r.status===304)return r;
   let msg='';try{msg=(await r.json()).message||''}catch(e){}
+  /* trop de requêtes : ce n'est PAS le jeton. GitHub dit quand ça repart */
+  if(r.status===429||(r.status===403&&(r.headers.get('x-ratelimit-remaining')==='0'||/rate limit/i.test(msg)))){
+    const reset=+r.headers.get('x-ratelimit-reset')*1000||0,retry=+r.headers.get('retry-after')*1000||0;
+    const er=new Error('limite');er.code=r.status;er.until=Math.max(reset,retry?Date.now()+retry:0,Date.now()+60e3);throw er}
   const er=new Error(r.status===401?'jeton':r.status===403||r.status===404||r.status===422?'droits':'http');er.code=r.status;er.detail=msg;throw er}
+async function gh(path,opt={}){return (await ghRaw(path,opt)).json()}
 async function findGist(){for(let pg=1;pg<=5;pg++){const L=await gh(`/gists?per_page=100&page=${pg}`);const g=L.find(x=>x.description===GDESC&&x.files&&x.files[GFILE]);if(g)return g;if(L.length<100)return null}return null}
-async function pullRemote(){const g=await gh('/gists/'+SY.gistId),f=g.files&&g.files[GFILE];if(!f)return null;
-  const txt=f.truncated?await (await fetch(f.raw_url,{cache:'no-store'})).text():f.content;return unseal(JSON.parse(txt))}
+/* requête conditionnelle : si rien n'a changé, GitHub répond 304 et ça ne compte pas dans sa limite */
+let rCache=null;
+const clone=x=>JSON.parse(JSON.stringify(x));
+async function pullRemote(){
+  const r=await ghRaw('/gists/'+SY.gistId,{},rCache&&rCache.id===SY.gistId?{'If-None-Match':rCache.etag}:{});
+  if(r.status===304&&rCache)return clone(rCache.data);
+  const g=await r.json(),f=g.files&&g.files[GFILE];if(!f)return null;
+  const txt=f.truncated?await (await fetch(f.raw_url,{cache:'no-store'})).text():f.content,data=await unseal(JSON.parse(txt));
+  const et=r.headers.get('etag');rCache=et?{id:SY.gistId,etag:et,data:clone(data)}:null;return data}
 /* fusion sans perte : les notes des deux appareils sont réunies, les suppressions suivies, le solde et les réglages les plus récents gagnent */
 function merge(a,b){
   const o={...a};
   if((b.cfgAt||0)>(a.cfgAt||0)){o.items=b.items||[];o.payday=b.payday||28;o.paid=b.paid||{};if(Array.isArray(b.rem))o.rem=b.rem;o.cfgAt=b.cfgAt}
   if(b.balance&&(!a.balance||b.balance.at>a.balance.at))o.balance=b.balance;
+  if(b.revBal&&(!a.revBal||b.revBal.at>a.revBal.at))o.revBal=b.revBal;
   const del=new Set([...(a.delNotes||[]),...(b.delNotes||[])]),m=new Map();
   [...(a.notes||[]),...(b.notes||[])].forEach(n=>{if(n&&!del.has(n.id))m.set(n.id,n)});
   o.notes=[...m.values()].sort((x,y)=>x.at-y.at);o.delNotes=[...del].slice(-500);
   return o}
-const core=x=>JSON.stringify([x.items,x.payday,x.paid,x.rem||[],x.cfgAt||0,x.balance,[...(x.notes||[])].sort((a,b)=>a.at-b.at||(a.id<b.id?-1:1)),[...(x.delNotes||[])].sort()]);
+const core=x=>JSON.stringify([x.items,x.payday,x.paid,x.rem||[],x.cfgAt||0,x.balance,x.revBal||null,[...(x.notes||[])].sort((a,b)=>a.at-b.at||(a.id<b.id?-1:1)),[...(x.delNotes||[])].sort()]);
 let syBusy=false,syAgain=false,syT;
-function scheduleSync(){if(!SY.token)return;clearTimeout(syT);syT=setTimeout(syncNow,1200)}
-async function syncNow(){
+function scheduleSync(){if(!SY.token)return;clearTimeout(syT);syT=setTimeout(syncNow,1500)}
+let syLastPull=0,syPauseT;const syLog=[];
+/* soft : synchro « de routine » (retour sur l'appli) — pas plus d'une toutes les 30 s */
+async function syncNow(soft){
   if(!SY.token||!SY.pass||navigator.onLine===false){renderSync();return}
-  if(syBusy){syAgain=true;return}syBusy=true;
+  if(SY.pauseUntil&&Date.now()<SY.pauseUntil){renderSync();clearTimeout(syPauseT);syPauseT=setTimeout(syncNow,SY.pauseUntil-Date.now()+2000);return}
+  if(soft&&Date.now()-syLastPull<30e3)return;
+  /* garde-fou : si une boucle s'emballe, on s'arrête 15 min au lieu d'épuiser la limite GitHub */
+  const t0=Date.now();while(syLog.length&&t0-syLog[0]>10*60e3)syLog.shift();
+  if(syLog.length>=40){SY.err='limite';SY.pauseUntil=t0+15*60e3;SY.errInfo='trop de synchros en 10 min';saveSync();renderSync();return}
+  if(syBusy){syAgain=true;return}syBusy=true;syLastPull=t0;syLog.push(t0);
   try{
     if(!SY.gistId){const g=await findGist();if(g)SY.gistId=g.id}
     const remote=SY.gistId?await pullRemote():null;
@@ -595,23 +641,24 @@ async function syncNow(){
     if(core(merged)!==core(S)){S=merged;lastCfg=cfgSig(S);saveLocal();render()}
     if(!remote||core(merged)!==core(remote)){
       const content=JSON.stringify(await seal(merged));
-      if(SY.gistId)await gh('/gists/'+SY.gistId,{method:'PATCH',body:JSON.stringify({files:{[GFILE]:{content}}})});
+      if(SY.gistId){const r=await ghRaw('/gists/'+SY.gistId,{method:'PATCH',body:JSON.stringify({files:{[GFILE]:{content}}})});const et=r.headers.get('etag');rCache=et?{id:SY.gistId,etag:et,data:clone(merged)}:null}
       else{const g=await gh('/gists',{method:'POST',body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content}}})});SY.gistId=g.id}
     }
-    SY.last=Date.now();SY.err=null;SY.errInfo='';
-  }catch(e){SY.err=e.message==='jeton'?'jeton':e.message==='phrase'?'phrase':e.message==='droits'?'droits':e.message==='http'?'http':'reseau';
+    SY.last=Date.now();SY.err=null;SY.errInfo='';SY.pauseUntil=0;
+  }catch(e){if(e.message==='limite'){SY.pauseUntil=e.until;clearTimeout(syPauseT);syPauseT=setTimeout(syncNow,e.until-Date.now()+2000)}
+    SY.err=e.message==='jeton'?'jeton':e.message==='phrase'?'phrase':e.message==='droits'?'droits':e.message==='http'?'http':e.message==='limite'?'limite':'reseau';
     SY.errInfo=(e.code?'code '+e.code:'')+(e.detail?' · '+e.detail:'')+(!e.code&&SY.err==='reseau'?String(e.message||e).slice(0,80):'')}
   finally{syBusy=false;saveSync();renderSync();if(syAgain){syAgain=false;syncNow()}}
 }
 let setupErr='',setupVals={};
-const ERR={http:'GitHub a renvoyé une erreur inattendue.',jeton:'Le jeton GitHub est refusé (expiré ou faux). Colle un nouveau jeton.',phrase:'La phrase secrète ne correspond pas à celle de ton autre appareil. Rien n\'a été envoyé.',droits:'Le jeton n\'a pas le droit « gist ». Crée-en un avec cette case cochée.',reseau:'Pas de connexion pour l\'instant. La synchro reprendra toute seule.'};
+const ERR={http:'GitHub a renvoyé une erreur inattendue.',jeton:'Le jeton GitHub est refusé (expiré ou faux). Colle un nouveau jeton.',phrase:'La phrase secrète ne correspond pas à celle de ton autre appareil. Rien n\'a été envoyé.',droits:'Le jeton n\'a pas le droit « gist ». Crée-en un avec cette case cochée.',reseau:'Pas de connexion pour l\'instant. La synchro reprendra toute seule.',limite:'GitHub limite le nombre de synchros par heure. Ton jeton est bon : ne le change pas. Tes données restent sur cet appareil.'};
 function renderSync(){
   const box=$('#syncBox'),foot=$('#foot');
   const when=SY.last?new Date(SY.last).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):null;
-  if(foot)foot.textContent=SY.token?(SY.err&&SY.err!=='reseau'?'Synchro en pause : ouvre les Réglages.':`Chiffré et synchronisé${when?' · '+when:''}`):'Tes chiffres restent sur cet appareil. Rien n\'est envoyé.';
+  if(foot)foot.textContent=SY.token?(SY.err==='limite'&&SY.pauseUntil?`Synchro en pause jusqu'à ${new Date(SY.pauseUntil).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} (limite GitHub)`:SY.err&&SY.err!=='reseau'?'Synchro en pause : ouvre les Réglages.':`Chiffré et synchronisé${when?' · '+when:''}`):'Tes chiffres restent sur cet appareil. Rien n\'est envoyé.';
   if(!box)return;
   if(SY.token){
-    box.innerHTML=`<div class="sync-on${SY.err&&SY.err!=='reseau'?' err':''}"><span class="dot"></span><span>${SY.err?esc((ERR[SY.err]||'Erreur de synchro')+(SY.errInfo?` (${SY.errInfo})`:'')):`Synchro active${when?' · dernière à '+when:''}`}</span></div>
+    box.innerHTML=`<div class="sync-on${SY.err&&SY.err!=='reseau'?' err':''}"><span class="dot"></span><span>${SY.err?esc((ERR[SY.err]||'Erreur de synchro')+(SY.err==='limite'&&SY.pauseUntil?` Reprise automatique vers ${new Date(SY.pauseUntil).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}.`:SY.errInfo?` (${SY.errInfo})`:'')):`Synchro active${when?' · dernière à '+when:''}`}</span></div>
       ${SY.err==='jeton'||SY.err==='droits'?`<input class="field" id="syTok2" type="password" autocomplete="off" placeholder="Nouveau jeton GitHub" style="margin-bottom:8px">`:''}
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" type="button" id="syNow">${SY.err==='jeton'||SY.err==='droits'?'Enregistrer et synchroniser':'Synchroniser maintenant'}</button><button class="btn ghost sm" type="button" id="syOff">Désactiver sur cet appareil</button></div>`;
   }else{
@@ -639,7 +686,7 @@ $('#syncBox').addEventListener('click',async e=>{
   if(e.target.id==='syNow'){const t2=$('#syTok2');if(t2&&t2.value.trim())SY.token=t2.value.trim();SY.err=null;saveSync();await syncNow();if(!SY.err){toast('Synchronisé');renderItems();$('#payIn').value=S.payday}}
   if(e.target.id==='syOff'){if(!confirm('Arrêter la synchro sur cet appareil ? Tes données restent ici, et sur tes autres appareils.'))return;SY={};saveSync();renderSync();toast('Synchro désactivée sur cet appareil')}
 });
-addEventListener('online',()=>syncNow());
+addEventListener('online',()=>syncNow(true));
 
 render();renderSync();syncNow();
 if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
