@@ -84,6 +84,37 @@ section h2 small{font-weight:500;color:var(--muted);font-size:13px}
 .note .nm{min-width:0}
 .note .nm b{font-weight:650;font-size:15px}
 .note .am.in{color:var(--pos)}
+.tag.cur{color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line)}
+.nl .tag{margin-left:6px}
+small .tag{margin:0 6px 0 0;padding:1px 6px;font-size:10.5px}
+.note .nm small{overflow-wrap:anywhere}
+.tabs{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:22px -16px 0;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;background:color-mix(in srgb,var(--page) 92%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.tabs button{border:0;background:var(--surface-2);border-radius:12px;padding:10px 6px;font-size:14.5px;font-weight:650;color:var(--ink-2);display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--page)}
+.cnt{font-size:11.5px;font-weight:700;min-width:20px;padding:1px 6px;border-radius:99px;background:color-mix(in srgb,currentColor 18%,transparent)}
+.cnt.warn{background:var(--warn);color:#fff}
+section.tp{margin-top:12px}
+h3.day{font-size:13px;font-weight:650;color:var(--ink-2);margin:16px 2px 8px;display:flex;justify-content:space-between;gap:10px;text-transform:none}
+h3.day:first-letter{text-transform:uppercase}
+h3.day small{font-weight:500;color:var(--muted)}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:4px}
+.sum div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.sum span{display:block;font-size:12px;color:var(--muted)}
+.sum b{font-size:15.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sum b.in{color:var(--pos)}
+.seg.sm{margin:0 0 4px}
+.seg.sm button{font-size:14px;padding:9px 6px}
+.fold{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:12px;padding:12px 14px;border:1px dashed var(--line);border-radius:var(--r);background:none;font-size:14px;font-weight:600;color:var(--ink-2)}
+.fold small{font-weight:600;color:var(--muted);margin-left:4px}
+.fold+.list{margin-top:8px}
+.chev{font-size:13px;font-weight:600;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px}
+.calcbtn{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;margin-top:14px;padding:10px 0 0;border:0;border-top:1px solid var(--line);background:none;font-size:14px;color:var(--ink-2);text-align:left}
+.calcbtn b{color:var(--ink);font-variant-numeric:tabular-nums}
+.calcbtn+.calc{margin-top:8px;padding-top:0;border-top:0}
+.revchip{display:flex;justify-content:space-between;align-items:center;width:100%;margin-top:10px;padding:12px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-size:14px;color:var(--ink-2);text-align:left}
+.revchip b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+.revchip b.neg{color:var(--neg)}
+.it{padding:10px 14px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);margin:2px 0 14px}
 .seg button{border:0;border-radius:11px;padding:10px;font-size:15px;font-weight:650;background:none;color:var(--ink-2)}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
@@ -377,6 +408,9 @@ function compute(){
 }
 
 /* ---------- affichage ---------- */
+/* préférences d'affichage : propres à cet appareil, jamais synchronisées */
+const UIK='mon-reste-ui';let UI=(()=>{try{return JSON.parse(localStorage.getItem(UIK))||{}}catch(e){return{}}})();
+function setUI(o){Object.assign(UI,o);try{localStorage.setItem(UIK,JSON.stringify(UI))}catch(e){}render()}
 function render(){
   const R=compute(),c=R.c;
   $('#cycleLbl').textContent=`Paie du ${fmtD(c.start)} → paie du ${fmtD(c.next)}`;
@@ -397,16 +431,18 @@ function render(){
     h+=`<div class="hero"><div class="lbl">Tu peux dépenser</div><div class="big${neg?' neg':''}">${eur(R.dispo)}</div>
       <div class="per">${neg?'':`soit <b>${eur(R.dispo/days)}</b> par jour, `}jusqu'à la paie du ${fmtD(c.next,{day:'numeric',month:'long'})} <span style="color:var(--muted)">(${c.days} jour${c.days>1?'s':''})</span></div>
       ${neg?`<div class="alert">Il manquera ${eur(-R.dispo)} avant la paie. Ralentis, ou prévois de puiser dans ton épargne de secours.</div>`:''}
-      <div class="calc"><div class="r"><span>Solde du ${fmtD(bd)} à ${bd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(b.amount)}</span></div>
+      <button class="calcbtn" type="button" data-ui="calc" aria-expanded="${!!UI.calc}"><span>Solde du ${fmtD(bd)} : <b>${eur(b.amount)}</b></span><span class="chev">${UI.calc?'Masquer le détail':'Voir le détail'}</span></button>
+      ${UI.calc?`<div class="calc"><div class="r"><span>Solde du ${fmtD(bd)} à ${bd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(b.amount)}</span></div>
         ${R.since.length?`<div class="r"><span>Passé depuis</span><span>${R.P>=0?'−':'+'} ${eur(Math.abs(R.P))}</span></div><div class="r est"><span>Solde aujourd'hui (estimé)</span><span>${eur(b.amount-R.P)}</span></div>`:''}
         <div class="r"><span>Encore à partir d'ici la paie</span><span>− ${eur(R.U)}</span></div>
         ${R.C?`<div class="r"><span>Rentrées à venir</span><span>+ ${eur(R.C)}</span></div>`:''}
         ${R.after.length?`<div class="r"><span>${R.after.some(n=>n.dir==='in')?'Notés depuis (achats et rentrées)':'Achats notés depuis'}</span><span>${R.N>=0?'−':'+'} ${eur(Math.abs(R.N))}</span></div>`:''}
-        <div class="r tot"><span>Disponible</span><span>${eur(R.dispo)}</span></div></div>
+        <div class="r tot"><span>Disponible</span><span>${eur(R.dispo)}</span></div></div>`:''}
       ${c.days<=3&&R.dispo>=1?`<div class="memo"><span class="t">Bientôt la paie</span><p>Vire ce qu'il te reste vers ton <b>Livret A</b> (épargne de secours), jusqu'à <b>${eur(R.dispo)}</b>. Garde une petite marge pour les derniers jours.</p>
         <div class="row">Libellé : <span class="lbl-code">SURPLUS</span><button class="btn ghost sm" type="button" data-copy="SURPLUS">Copier</button></div></div>`:''}
       ${old?`<div class="stale${(c.t-day0(bd))/864e5>=3?' warn':''}">Solde du ${fmtD(bd,{weekday:'long',day:'numeric',month:'long'})}. Mets-le à jour pour un chiffre juste.</div>`:''}</div>`;
   }
+  if(R.rev.length||S.revBal)h+=`<button class="revchip" type="button" data-goto="rev"><span><span class="tag rev" style="margin:0 8px 0 0">Revolut</span>${R.rb?'reste après abonnements':'ajoute ton solde Revolut'}</span><b${R.rb&&R.rDispo<0?' class="neg"':''}>${R.rb?eur(R.rDispo):'›'}</b></button>`;
   // rappels arrivés à échéance (ou en approche)
   const RL=remList(),dueL=RL.filter(r=>r.left<=(r.lead||14));
   h+=dueL.map(r=>{const late=r.left<0,money=r.amount>0,linked=S.items.some(i=>i.freq==='an'&&nkey(i.name)===nkey(r.name)),cur=money&&r.acct!=='revolut'&&!linked;
@@ -414,34 +450,57 @@ function render(){
       <div class="d">${fmtD(r.d,{weekday:'long',day:'numeric',month:'long'})} · <b>${whenTxt(r.left)}</b></div>
       <div class="row">${cur?`<button class="btn sm" type="button" data-rpay="${r.id}">C'est passé : déduire ${eur(r.amount)}</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Pas encore : changer la date</button><button class="linkbtn" type="button" data-rdone="${r.id}" style="font-size:13px">Déjà compté dans mon solde</button>`
         :`<button class="btn sm" type="button" data-rdone="${r.id}">C'est fait</button><button class="btn ghost sm" type="button" data-rdate="${r.id}">Changer la date</button>`}</div></div>`}).join('');
-  // à venir sur le compte courant
+  // ---- lignes communes ----
   const upc=R.cur.filter(i=>!i.passed),pas=R.cur.filter(i=>i.passed&&(i.inBal||!R.bal));
   const cr=i=>i.kind==='credit'||(i.tr&&i.inRev);
-  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm">${esc(i.name)}${i.freq==='an'?'<span class="tag vir">annuel</span>':''}${i.tr?`<span class="tag vir">${i.inRev?'arrivée du courant':'vers Revolut'}</span>`:i.kind==='virement'?'<span class="tag vir">virement</span>':cr(i)?'<span class="tag in">rentrée</span>':''}<small>${i.passed?(cr(i)?'reçu':'retiré'):'prévu le'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · libellé <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
-  h+=`<section><h2>Encore à partir <small>${upc.length?'− '+eur(R.U)+' déduits'+(R.C?' · + '+eur(R.C)+' ajoutés':''):'rien'}</small></h2><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
-    <p class="hint">Quand une ligne passe sur ton compte, touche-la : elle reste déduite de ton solde jusqu'à ce que tu le recopies à nouveau. Touche-la encore pour la remettre à venir.</p></section>`;
-  if(R.since.length)h+=`<section><h2>Passé depuis ton solde <small>${R.P>=0?'− ':'+ '}${eur(Math.abs(R.P))} déduits</small></h2><div class="list">${R.since.map(row).join('')}</div>
-    <p class="hint">Déjà sorti de ton compte, mais après le solde que tu as recopié : l'appli le retire elle-même. Recopie ton solde quand tu veux remettre les compteurs à zéro.</p></section>`;
-  if(pas.length)h+=`<section><h2>Déjà dans ton solde</h2><div class="list">${pas.map(row).join('')}</div></section>`;
-  if(R.rev.length){const rv=R.rev.filter(i=>!i.passed&&!i.tr);
-    h+=`<section><h2>Sur Revolut <small>${rv.length?eur(rv.reduce((s,i)=>s+i.amount,0))+' à payer':'tout est passé'}</small></h2><div class="list">${R.rev.map(row).join('')}</div>
-      ${R.rb?`<div class="rbox"><div class="calc" style="margin-top:0;padding-top:0;border-top:0">
-          <div class="r"><span>Solde Revolut du ${fmtD(new Date(R.rb.at))} à ${new Date(R.rb.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><span>${eur(R.rb.amount)}</span></div>
+  const acTag=a=>a==='revolut'?'<span class="tag rev">Revolut</span>':'<span class="tag cur">Courant</span>';
+  const row=i=>`<button class="it${i.passed?' done':''}" data-tog="${i.id}" aria-label="${esc(i.name)} : ${cr(i)?(i.passed?'déjà reçu':'à venir, ajouté'):i.passed?'déjà retiré de ton compte':'à venir, déduit'}"><span class="ck">${i.passed?'✓':''}</span><span class="nm"><span class="nl">${esc(i.name)}${i.tr&&!i.inRev?'<span class="tag vir">vers Revolut</span>':''}${i.freq==='an'?'<span class="tag vir">annuel</span>':''}${i.kind==='credit'?'<span class="tag in">rentrée</span>':''}</span><small>${acTag(i.inRev?'revolut':'courant')}${i.passed?(cr(i)?'reçu':'retiré'):'prévu'} ${fmtD(i.date,{weekday:'short',day:'numeric',month:'short'})}${labelOf(i)?` · <span class="lbl-code">${esc(labelOf(i))}</span>`:''}</small></span><span class="am${cr(i)?' in':''}">${cr(i)?'+ ':''}${eur(i.amount)}</span></button>`;
+  const fold=(k,title,list)=>list.length?`<button class="fold" type="button" data-ui="${k}" aria-expanded="${!!UI[k]}"><span>${title} <small>${list.length}</small></span><span class="chev">${UI[k]?'Masquer':'Afficher'}</span></button>${UI[k]?`<div class="list">${list.map(row).join('')}</div>`:''}`:'';
+  const revUp=R.rev.filter(i=>!i.passed),revPas=R.rev.filter(i=>i.passed);
+  const tab=['notes','avenir','rappels'].includes(UI.tab)?UI.tab:'notes',acc=UI.acc==='revolut'?'revolut':'courant';
+  const nUp=upc.length+revUp.filter(i=>!i.tr).length,nDue=dueL.length;
+  h+=`<nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="notes" aria-selected="${tab==='notes'}">Mes notes</button>
+    <button type="button" role="tab" data-tab="avenir" aria-selected="${tab==='avenir'}">À venir${nUp?` <span class="cnt">${nUp}</span>`:''}</button>
+    <button type="button" role="tab" data-tab="rappels" aria-selected="${tab==='rappels'}">Rappels${nDue?` <span class="cnt warn">${nDue}</span>`:''}</button></nav>`;
+  if(tab==='notes'){
+    const T=R.notes.filter(n=>n.dir!=='in').reduce((s,n)=>s+n.amount,0),TI=R.notes.filter(n=>n.dir==='in').reduce((s,n)=>s+n.amount,0);
+    const last=R.notes[0],lastTxt=last?whenTxt(Math.round((day0(new Date(last.at))-c.t)/864e5)):'';
+    const groups=[];R.notes.forEach(n=>{const k=day0(new Date(n.at)).getTime();let g=groups[groups.length-1];if(!g||g.k!==k){g={k,l:[]};groups.push(g)}g.l.push(n)});
+    const nrow=n=>`<div class="note"><span class="nm"><b>${esc(n.cat)}</b><small>${acTag(n.acct)}${n.why?`« ${esc(n.why)} »`:''}</small></span><span class="am${n.dir==='in'?' in':''}">${n.dir==='in'?'+ ':''}${eur(n.amount)}</span><button class="x" data-delnote="${n.id}" aria-label="Supprimer">✕</button></div>`;
+    h+=`<section class="tp">${R.notes.length?`<div class="sum"><div><span>Dépensé</span><b>${eur(T)}</b></div>${TI?`<div><span>Reçu</span><b class="in">+ ${eur(TI)}</b></div>`:''}<div><span>Dernière note</span><b>${lastTxt}</b></div></div>`:''}
+      ${groups.map(g=>`<h3 class="day">${fmtD(new Date(g.k),{weekday:'long',day:'numeric',month:'long'})}</h3><div class="list">${g.l.map(nrow).join('')}</div>`).join('')||`<div class="list"><div class="empty">Aucune note ce mois-ci. Note les achats qui sortent de ta routine, et les rentrées hors salaire (épargne reprise, remboursement, aide).<div style="margin-top:10px"><button class="btn sm" type="button" data-act="note">+ Noter</button></div></div></div>`}
+      <p class="hint">Rien d'oublié ? Compare avec les dernières opérations de ton appli bancaire.</p></section>`;
+  }else if(tab==='avenir'){
+    const cC=upc.length,cR=revUp.filter(i=>!i.tr).length;
+    h+=`<section class="tp"><div class="seg sm" role="group" aria-label="Compte">
+      <button type="button" data-acc="courant" aria-pressed="${acc==='courant'}">Compte courant${cC?` · ${cC}`:''}</button>
+      <button type="button" data-acc="revolut" aria-pressed="${acc==='revolut'}">Revolut${cR?` · ${cR}`:''}</button></div>`;
+    if(acc==='courant'){
+      h+=`<h3 class="day">À venir d'ici la paie <small>${upc.length?'− '+eur(R.U)+(R.C?' · + '+eur(R.C):''):''}</small></h3><div class="list">${upc.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
+        ${R.since.length?`<h3 class="day">Passé depuis ton solde <small>${R.P>=0?'− ':'+ '}${eur(Math.abs(R.P))}</small></h3><div class="list">${R.since.map(row).join('')}</div>`:''}
+        ${fold('pastC','Déjà dans ton solde',pas)}
+        <p class="hint">Quand une ligne passe sur ton compte, touche-la pour la cocher. Touche-la encore pour la remettre à venir.</p>`;
+    }else{
+      h+=R.rb?`<div class="rbox"><div class="calc" style="margin-top:0;padding-top:0;border-top:0">
+          <div class="r"><span>Solde Revolut du ${fmtD(new Date(R.rb.at))}</span><span>${eur(R.rb.amount)}</span></div>
           ${R.rSince.length?`<div class="r"><span>Passé depuis</span><span>${R.rP>=0?'−':'+'} ${eur(Math.abs(R.rP))}</span></div>`:''}
           ${R.rIn?`<div class="r"><span>Virement à venir depuis le courant</span><span>+ ${eur(R.rIn)}</span></div>`:''}
           <div class="r"><span>Abonnements encore à payer</span><span>− ${eur(R.rU+R.rIn)}</span></div>
-          ${R.rAfter.length?`<div class="r"><span>${R.rAfter.some(n=>n.dir==='in')?'Notés depuis (achats et rentrées)':'Achats Revolut notés depuis'}</span><span>${R.rN>=0?'−':'+'} ${eur(Math.abs(R.rN))}</span></div>`:''}
+          ${R.rAfter.length?`<div class="r"><span>Notés depuis</span><span>${R.rN>=0?'−':'+'} ${eur(Math.abs(R.rN))}</span></div>`:''}
           <div class="r tot${R.rDispo<0?' neg':''}"><span>Reste sur Revolut</span><span>${eur(R.rDispo)}</span></div></div>
           ${R.rDispo<0?`<div class="alert">Il manquera ${eur(-R.rDispo)} sur Revolut pour tes abonnements. Prévois un virement.</div>`:''}
           <button class="btn ghost sm" type="button" data-act="rbal" style="margin-top:10px">Mettre à jour mon solde Revolut</button></div>`
-        :`<div class="rbox"><p style="margin:0 0 10px;font-size:14px;color:var(--ink-2)">${S.revBal?'Nouvelle paie : recopie ton solde Revolut.':'Ajoute ton solde Revolut pour voir ce qu\'il y restera après tes abonnements.'}</p><button class="btn ghost sm" type="button" data-act="rbal">+ Mon solde Revolut</button></div>`}
-      <p class="hint">Payé depuis Revolut : n'est pas retiré de ton compte courant. Le virement qui alimente Revolut, lui, l'est.</p></section>`}
-  // tous les rappels
-  h+=`<section><h2>Rappels <small>${RL.length?RL.length+' en tout':''}</small></h2><div class="list">${RL.map(r=>`<button class="rm${r.left<=(r.lead||14)?' soon':''}" type="button" data-redit="${r.id}"><span class="nm">${esc(r.name)}${r.acct==='revolut'&&r.amount>0?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(r.d,{day:'numeric',month:'short',year:'numeric'})} · ${r.left<=(r.lead||14)?`<b>${whenTxt(r.left)}</b>`:whenTxt(r.left)} · ${REP[r.rep]||REP.an}</small></span><span class="am">${r.amount>0?eur(r.amount):''}</span></button>`).join('')||'<div class="empty">Aucun rappel. Tes renouvellements annuels arrivent tout seuls depuis Mes dépenses (Réglages › Importer). Tu peux aussi en ajouter un à la main.</div>'}</div>
-    <div style="margin-top:10px"><button class="btn ghost sm" type="button" data-act="rem">+ Ajouter un rappel</button></div></section>`;
-  // achats notés
-  const T=R.notes.filter(n=>n.dir!=='in').reduce((s,n)=>s+n.amount,0),TI=R.notes.filter(n=>n.dir==='in').reduce((s,n)=>s+n.amount,0);
-  h+=`<section><h2>Mes achats notés <small>${R.notes.length?[T?eur(T)+' dépensés':'',TI?'+ '+eur(TI)+' reçus':''].filter(Boolean).join(' · ')+' ce mois-ci':''}</small></h2><div class="list">${R.notes.map(n=>{const d=new Date(n.at);return `<div class="note"><span class="nm"><b>${esc(n.cat)}</b>${n.acct==='revolut'?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(d,{weekday:'short',day:'numeric',month:'short'})}</small>${n.why?`<i>« ${esc(n.why)} »</i>`:''}</span><span class="am${n.dir==='in'?' in':''}">${n.dir==='in'?'+ ':''}${eur(n.amount)}</span><button class="x" data-delnote="${n.id}" aria-label="Supprimer">✕</button></div>`}).join('')||'<div class="empty">Aucun achat noté. Note ceux qui sortent de ta routine, pour te souvenir à la fin du mois de ce que tu as acheté, et pourquoi. Une rentrée hors salaire (épargne reprise, remboursement, aide) se note aussi, avec « Une rentrée ».</div>'}</div></section>`;
+        :`<div class="rbox"><p style="margin:0 0 10px;font-size:14px;color:var(--ink-2)">${S.revBal?'Nouvelle paie : recopie ton solde Revolut.':'Ajoute ton solde Revolut pour voir ce qu\'il y restera après tes abonnements.'}</p><button class="btn ghost sm" type="button" data-act="rbal">+ Mon solde Revolut</button></div>`;
+      h+=`<h3 class="day">À payer avec Revolut</h3><div class="list">${revUp.map(row).join('')||'<div class="empty">Tout est passé pour ce mois-ci.</div>'}</div>
+        ${fold('pastR','Déjà passé',revPas)}
+        <p class="hint">Payé depuis Revolut : ne touche pas ton compte courant. Seul le virement qui alimente Revolut en sort.</p>`;
+    }
+    h+=`</section>`;
+  }else{
+    h+=`<section class="tp"><div class="list">${RL.map(r=>`<button class="rm${r.left<=(r.lead||14)?' soon':''}" type="button" data-redit="${r.id}"><span class="nm"><span class="nl">${esc(r.name)}</span><small>${r.amount>0?acTag(r.acct):''}${fmtD(r.d,{day:'numeric',month:'short',year:'numeric'})} · ${r.left<=(r.lead||14)?`<b>${whenTxt(r.left)}</b>`:whenTxt(r.left)} · ${REP[r.rep]||REP.an}</small></span><span class="am">${r.amount>0?eur(r.amount):''}</span></button>`).join('')||'<div class="empty">Aucun rappel. Tes renouvellements annuels arrivent tout seuls depuis Mes dépenses (Réglages › Importer). Tu peux aussi en ajouter un à la main.</div>'}</div>
+      <div style="margin-top:10px"><button class="btn ghost sm" type="button" data-act="rem">+ Ajouter un rappel</button></div></section>`;
+  }
   $('#app').innerHTML=h;
 }
 
@@ -452,7 +511,11 @@ $$('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog')
 $$('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
 
 $('#app').addEventListener('click',e=>{
-  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='bal')openBal();if(a.dataset.act==='rbal')openBal('rev');if(a.dataset.act==='set')openSet();if(a.dataset.act==='rem')openRem(null);return}
+  const tb=e.target.closest('[data-tab]');if(tb){setUI({tab:tb.dataset.tab});return}
+  const ac=e.target.closest('[data-acc]');if(ac){setUI({acc:ac.dataset.acc});return}
+  const ui=e.target.closest('[data-ui]');if(ui){setUI({[ui.dataset.ui]:!UI[ui.dataset.ui]});return}
+  const go=e.target.closest('[data-goto]');if(go){setUI({tab:'avenir',acc:'revolut'});const t=$('.tabs');if(t)t.scrollIntoView({behavior:'smooth',block:'start'});return}
+  const a=e.target.closest('[data-act]');if(a){if(a.dataset.act==='note'){$('#openNote').click();return}if(a.dataset.act==='bal')openBal();if(a.dataset.act==='rbal')openBal('rev');if(a.dataset.act==='set')openSet();if(a.dataset.act==='rem')openRem(null);return}
   const re=e.target.closest('[data-redit]');if(re){openRem(re.dataset.redit);return}
   const rd=e.target.closest('[data-rdate]');if(rd){openRem(rd.dataset.rdate,true);return}
   const rp=e.target.closest('[data-rpay]');if(rp){const r=S.rem.find(x=>x.id===rp.dataset.rpay);if(!r)return;
