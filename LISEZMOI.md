@@ -24,3 +24,16 @@ Tes données ne sont pas touchées.
 ## Sauvegarde
 
 Réglages › **Copier ma sauvegarde**, à coller dans tes Notes de temps en temps.
+
+## Synchroniser le PC et l'iPhone
+
+1. Crée un jeton GitHub (une seule fois) : github.com › ta photo › Settings › Developer settings ›
+   Personal access tokens › Tokens (classic) › Generate new token (classic).
+   Note « Mon reste », Expiration « No expiration », coche **uniquement « gist »**. Copie le code `ghp_…`.
+2. **D'abord sur le PC** (là où sont tes données) : Mon reste › Réglages › Synchroniser mes appareils ›
+   colle le jeton, choisis une phrase secrète › Activer la synchro.
+3. **Puis sur l'iPhone** (depuis l'icône) : même jeton, **même phrase secrète** › Activer la synchro.
+   Tout arrive tout seul.
+
+Tes données sont chiffrées sur l'appareil avant d'être envoyées dans un gist secret : GitHub ne voit que du charabia.
+Si tu oublies la phrase secrète, personne ne peut la retrouver (les données de chaque appareil restent intactes).

@@ -83,6 +83,10 @@ section h2 small{font-weight:500;color:var(--muted);font-size:13px}
 .note:first-child{border-top:0}
 .note .nm{min-width:0}
 .note .nm b{font-weight:650;font-size:15px}
+.note .am.in{color:var(--pos)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);margin:2px 0 14px}
+.seg button{border:0;border-radius:11px;padding:10px;font-size:15px;font-weight:650;background:none;color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
 .note .nm small{display:block;color:var(--muted);font-size:12.5px}
 .note .nm i{display:block;font-style:normal;font-size:13.5px;color:var(--ink-2);overflow-wrap:anywhere}
 .note .am{font-variant-numeric:tabular-nums;font-weight:650}
@@ -183,7 +187,7 @@ input[type="date"].field{min-height:48px;-webkit-appearance:none;appearance:none
 
 <div class="bar" id="bar"><div class="in">
   <button class="btn ghost" id="openBal">Mon solde</button>
-  <button class="btn" id="openNote">+ Noter un achat</button>
+  <button class="btn" id="openNote">+ Noter</button>
 </div></div>
 
 <!-- Solde -->
@@ -196,14 +200,18 @@ input[type="date"].field{min-height:48px;-webkit-appearance:none;appearance:none
 
 <!-- Achat -->
 <dialog id="dNote"><form method="dialog" class="sheet" id="fNote">
-  <h2 class="dt">Noter un achat</h2>
-  <p class="sub">Pour les achats hors routine : achat en ligne, cadeau, coup de cœur…</p>
+  <div class="seg" id="noteDir" role="group" aria-label="Sens">
+    <button type="button" data-dir="out" aria-pressed="true">Une dépense</button>
+    <button type="button" data-dir="in" aria-pressed="false">Une rentrée</button>
+  </div>
+  <h2 class="dt" id="noteT">Noter un achat</h2>
+  <p class="sub" id="noteSub">Pour les achats hors routine : achat en ligne, cadeau, coup de cœur…</p>
   <input class="field amt" id="noteAmt" inputmode="decimal" autocomplete="off" placeholder="0,00 €" aria-label="Montant">
-  <label class="l">C'était quoi ?</label>
+  <label class="l" id="noteCatL">C'était quoi ?</label>
   <div class="chips" id="noteCat"></div>
   <label class="l" for="noteWhy">Pourquoi ? <span style="font-weight:400;color:var(--muted)">(facultatif)</span></label>
   <input class="field" id="noteWhy" maxlength="120" placeholder="ex. promo, fatigue du soir, vraiment besoin…">
-  <label class="l">Payé avec</label>
+  <label class="l" id="noteAcctL">Payé avec</label>
   <div class="chips" id="noteAcct">
     <button type="button" class="chip" data-acct="courant" aria-pressed="true">Compte courant</button>
     <button type="button" class="chip" data-acct="revolut" aria-pressed="false">Revolut</button>
@@ -352,7 +360,8 @@ function compute(){
   const notes=S.notes.filter(n=>n.at>=c.start.getTime()).sort((a,b)=>b.at-a.at);
   const bal=S.balance&&S.balance.at>=c.start.getTime()?S.balance:null; /* un solde d'avant la paie ne compte plus */
   const after=bal?notes.filter(n=>n.acct==='courant'&&n.at>bal.at):[];
-  const N=after.reduce((s,n)=>s+n.amount,0);
+  const sv=n=>n.dir==='in'?-n.amount:n.amount; /* une rentrée notée s'ajoute, une dépense se retire */
+  const N=after.reduce((s,n)=>s+sv(n),0);
   /* passé depuis le solde recopié : pas encore dedans, on le retire */
   cur.forEach(i=>{i.inBal=inBalance(i,c,bal)});
   const since=bal?cur.filter(i=>i.passed&&!i.inBal):[],P=since.reduce((s,i)=>s+sg(i),0);
@@ -362,7 +371,7 @@ function compute(){
   rev.forEach(i=>{i.inBal=inBalance(i,c,rb)});
   const rUp=rev.filter(i=>!i.passed),rU=rUp.reduce((s,i)=>s+sgR(i),0),rIn=rUp.filter(i=>sgR(i)<0).reduce((s,i)=>s+i.amount,0);
   const rSince=rb?rev.filter(i=>i.passed&&!i.inBal):[],rP=rSince.reduce((s,i)=>s+sgR(i),0);
-  const rAfter=rb?notes.filter(n=>n.acct==='revolut'&&n.at>rb.at):[],rN=rAfter.reduce((s,n)=>s+n.amount,0);
+  const rAfter=rb?notes.filter(n=>n.acct==='revolut'&&n.at>rb.at):[],rN=rAfter.reduce((s,n)=>s+sv(n),0);
   const rDispo=rb?rb.amount-rP-rU-rN:null;
   return{c,cur,rev,U,C,since,P,notes,after,N,dispo,bal,rb,rU,rIn,rSince,rP,rAfter,rN,rDispo};
 }
@@ -392,7 +401,7 @@ function render(){
         ${R.since.length?`<div class="r"><span>Passé depuis</span><span>${R.P>=0?'−':'+'} ${eur(Math.abs(R.P))}</span></div><div class="r est"><span>Solde aujourd'hui (estimé)</span><span>${eur(b.amount-R.P)}</span></div>`:''}
         <div class="r"><span>Encore à partir d'ici la paie</span><span>− ${eur(R.U)}</span></div>
         ${R.C?`<div class="r"><span>Rentrées à venir</span><span>+ ${eur(R.C)}</span></div>`:''}
-        ${R.after.length?`<div class="r"><span>Achats notés depuis</span><span>− ${eur(R.N)}</span></div>`:''}
+        ${R.after.length?`<div class="r"><span>${R.after.some(n=>n.dir==='in')?'Notés depuis (achats et rentrées)':'Achats notés depuis'}</span><span>${R.N>=0?'−':'+'} ${eur(Math.abs(R.N))}</span></div>`:''}
         <div class="r tot"><span>Disponible</span><span>${eur(R.dispo)}</span></div></div>
       ${c.days<=3&&R.dispo>=1?`<div class="memo"><span class="t">Bientôt la paie</span><p>Vire ce qu'il te reste vers ton <b>Livret A</b> (épargne de secours), jusqu'à <b>${eur(R.dispo)}</b>. Garde une petite marge pour les derniers jours.</p>
         <div class="row">Libellé : <span class="lbl-code">SURPLUS</span><button class="btn ghost sm" type="button" data-copy="SURPLUS">Copier</button></div></div>`:''}
@@ -421,7 +430,7 @@ function render(){
           ${R.rSince.length?`<div class="r"><span>Passé depuis</span><span>${R.rP>=0?'−':'+'} ${eur(Math.abs(R.rP))}</span></div>`:''}
           ${R.rIn?`<div class="r"><span>Virement à venir depuis le courant</span><span>+ ${eur(R.rIn)}</span></div>`:''}
           <div class="r"><span>Abonnements encore à payer</span><span>− ${eur(R.rU+R.rIn)}</span></div>
-          ${R.rAfter.length?`<div class="r"><span>Achats Revolut notés depuis</span><span>− ${eur(R.rN)}</span></div>`:''}
+          ${R.rAfter.length?`<div class="r"><span>${R.rAfter.some(n=>n.dir==='in')?'Notés depuis (achats et rentrées)':'Achats Revolut notés depuis'}</span><span>${R.rN>=0?'−':'+'} ${eur(Math.abs(R.rN))}</span></div>`:''}
           <div class="r tot${R.rDispo<0?' neg':''}"><span>Reste sur Revolut</span><span>${eur(R.rDispo)}</span></div></div>
           ${R.rDispo<0?`<div class="alert">Il manquera ${eur(-R.rDispo)} sur Revolut pour tes abonnements. Prévois un virement.</div>`:''}
           <button class="btn ghost sm" type="button" data-act="rbal" style="margin-top:10px">Mettre à jour mon solde Revolut</button></div>`
@@ -431,8 +440,8 @@ function render(){
   h+=`<section><h2>Rappels <small>${RL.length?RL.length+' en tout':''}</small></h2><div class="list">${RL.map(r=>`<button class="rm${r.left<=(r.lead||14)?' soon':''}" type="button" data-redit="${r.id}"><span class="nm">${esc(r.name)}${r.acct==='revolut'&&r.amount>0?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(r.d,{day:'numeric',month:'short',year:'numeric'})} · ${r.left<=(r.lead||14)?`<b>${whenTxt(r.left)}</b>`:whenTxt(r.left)} · ${REP[r.rep]||REP.an}</small></span><span class="am">${r.amount>0?eur(r.amount):''}</span></button>`).join('')||'<div class="empty">Aucun rappel. Tes renouvellements annuels arrivent tout seuls depuis Mes dépenses (Réglages › Importer). Tu peux aussi en ajouter un à la main.</div>'}</div>
     <div style="margin-top:10px"><button class="btn ghost sm" type="button" data-act="rem">+ Ajouter un rappel</button></div></section>`;
   // achats notés
-  const T=R.notes.reduce((s,n)=>s+n.amount,0);
-  h+=`<section><h2>Mes achats notés <small>${R.notes.length?eur(T)+' ce mois-ci':''}</small></h2><div class="list">${R.notes.map(n=>{const d=new Date(n.at);return `<div class="note"><span class="nm"><b>${esc(n.cat)}</b>${n.acct==='revolut'?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(d,{weekday:'short',day:'numeric',month:'short'})}</small>${n.why?`<i>« ${esc(n.why)} »</i>`:''}</span><span class="am">${eur(n.amount)}</span><button class="x" data-delnote="${n.id}" aria-label="Supprimer">✕</button></div>`}).join('')||'<div class="empty">Aucun achat noté. Note ceux qui sortent de ta routine, pour te souvenir à la fin du mois de ce que tu as acheté, et pourquoi.</div>'}</div></section>`;
+  const T=R.notes.filter(n=>n.dir!=='in').reduce((s,n)=>s+n.amount,0),TI=R.notes.filter(n=>n.dir==='in').reduce((s,n)=>s+n.amount,0);
+  h+=`<section><h2>Mes achats notés <small>${R.notes.length?[T?eur(T)+' dépensés':'',TI?'+ '+eur(TI)+' reçus':''].filter(Boolean).join(' · ')+' ce mois-ci':''}</small></h2><div class="list">${R.notes.map(n=>{const d=new Date(n.at);return `<div class="note"><span class="nm"><b>${esc(n.cat)}</b>${n.acct==='revolut'?'<span class="tag rev">Revolut</span>':''}<small>${fmtD(d,{weekday:'short',day:'numeric',month:'short'})}</small>${n.why?`<i>« ${esc(n.why)} »</i>`:''}</span><span class="am${n.dir==='in'?' in':''}">${n.dir==='in'?'+ ':''}${eur(n.amount)}</span><button class="x" data-delnote="${n.id}" aria-label="Supprimer">✕</button></div>`}).join('')||'<div class="empty">Aucun achat noté. Note ceux qui sortent de ta routine, pour te souvenir à la fin du mois de ce que tu as acheté, et pourquoi. Une rentrée hors salaire (épargne reprise, remboursement, aide) se note aussi, avec « Une rentrée ».</div>'}</div></section>`;
   $('#app').innerHTML=h;
 }
 
@@ -469,15 +478,26 @@ $('#openBal').addEventListener('click',()=>openBal());
 $('#fBal').addEventListener('submit',e=>{const v=parseAmt($('#balIn').value);if(isNaN(v)){e.preventDefault();toast('Montant invalide');return}
   if(balKind==='rev')S.revBal={amount:v,at:Date.now()};else S.balance={amount:v,at:Date.now()};save();render();toast(balKind==='rev'?'Solde Revolut enregistré':'Solde enregistré')});
 
-let nCat=CATS[0],nAcct='courant';
-$('#noteCat').innerHTML=CATS.map(c=>`<button type="button" class="chip" data-cat="${c}">${c}</button>`).join('');
-function paint(){$$('#noteCat .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cat===nCat));$$('#noteAcct .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.acct===nAcct))}
+const CATS_IN=['Depuis mon épargne','Remboursement','Aide','Vente','Autre'];
+let nCat=CATS[0],nAcct='courant',nDir='out';
+function paint(){const L=nDir==='in'?CATS_IN:CATS;
+  $('#noteCat').innerHTML=L.map(c=>`<button type="button" class="chip" data-cat="${c}" aria-pressed="${c===nCat}">${c}</button>`).join('');
+  $$('#noteAcct .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.acct===nAcct));
+  $$('#noteDir button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.dir===nDir));
+  $('#noteT').textContent=nDir==='in'?'Noter une rentrée':'Noter un achat';
+  $('#noteSub').textContent=nDir==='in'?'Argent reçu en dehors de ta paie : virement depuis ton livret, remboursement, aide, vente…':'Pour les achats hors routine : achat en ligne, cadeau, coup de cœur…';
+  $('#noteCatL').textContent=nDir==='in'?"D'où vient cet argent ?":"C'était quoi ?";
+  $('#noteAcctL').textContent=nDir==='in'?'Arrivé sur':'Payé avec';
+  $('#noteWhy').placeholder=nDir==='in'?'ex. pour payer le vélo, aide IDFM…':'ex. promo, fatigue du soir, vraiment besoin…'}
+$('#noteDir').addEventListener('click',e=>{const b=e.target.closest('[data-dir]');if(b&&b.dataset.dir!==nDir){nDir=b.dataset.dir;nCat=(nDir==='in'?CATS_IN:CATS)[0];paint()}});
 $('#noteCat').addEventListener('click',e=>{const b=e.target.closest('[data-cat]');if(b){nCat=b.dataset.cat;paint()}});
 $('#noteAcct').addEventListener('click',e=>{const b=e.target.closest('[data-acct]');if(b){nAcct=b.dataset.acct;paint()}});
-$('#openNote').addEventListener('click',()=>{$('#noteAmt').value='';$('#noteWhy').value='';nCat=CATS[0];nAcct='courant';paint();openD('#dNote');setTimeout(()=>$('#noteAmt').focus(),50)});
+$('#openNote').addEventListener('click',()=>{$('#noteAmt').value='';$('#noteWhy').value='';nDir='out';nCat=CATS[0];nAcct='courant';paint();openD('#dNote');setTimeout(()=>$('#noteAmt').focus(),50)});
 $('#fNote').addEventListener('submit',e=>{const v=parseAmt($('#noteAmt').value);if(!(v>0)){e.preventDefault();toast('Indique un montant');return}
-  S.notes.push({id:uid(),at:Date.now(),amount:v,cat:nCat,why:$('#noteWhy').value.trim(),acct:nAcct});
-  const keep=Date.now()-400*864e5;S.notes=S.notes.filter(n=>n.at>keep);save();render();toast(nAcct==='courant'&&compute().bal?'Noté, et déduit de ton disponible':'Achat noté')});
+  const n={id:uid(),at:Date.now(),amount:v,cat:nCat,why:$('#noteWhy').value.trim(),acct:nAcct};if(nDir==='in')n.dir='in';S.notes.push(n);
+  const keep=Date.now()-400*864e5;S.notes=S.notes.filter(n=>n.at>keep);save();render();
+  const R=compute(),has=nAcct==='revolut'?R.rb:R.bal,w=nAcct==='revolut'?'Revolut':'ton compte courant';
+  toast(nDir==='in'?(has?`Rentrée notée, ajoutée à ${w}`:`Rentrée notée sur ${w}`):(has?`Noté, et retiré de ${w}`:`Achat noté sur ${w}`))});
 
 /* rappel : création / modification */
 let rEd=null,rRep='an',rLead=14,rAcct='courant';
@@ -587,7 +607,7 @@ async function copy(t,msg){try{await navigator.clipboard.writeText(t);toast(msg)
 $('#bkCopy').addEventListener('click',()=>copy(JSON.stringify({app:'mon-reste',v:1,...S}),'Sauvegarde copiée : garde-la dans tes notes'));
 $('#bkLoad').addEventListener('click',()=>{const t=prompt('Colle ta sauvegarde :');if(!t)return;try{const d=JSON.parse(t);if(!d||!Array.isArray(d.items))throw 0;if(!confirm('Remplacer toutes les données de cet appareil par cette sauvegarde ?'))return;S=Object.assign(blank(),d);if(!Array.isArray(S.rem))S.rem=[];delete S.app;delete S.v;save();renderItems();$('#payIn').value=S.payday;render();toast('Sauvegarde restaurée')}catch(e){toast('Sauvegarde illisible')}});
 $('#notesCopy').addEventListener('click',()=>{const R=compute();if(!R.notes.length){toast('Aucun achat noté ce mois-ci');return}
-  const t=`Mes achats notés, paie du ${fmtD(R.c.start)} → ${fmtD(R.c.next)} :\n`+[...R.notes].reverse().map(n=>`- ${new Date(n.at).toLocaleDateString('fr-FR')} · ${n.cat} · ${eur(n.amount)}${n.acct==='revolut'?' (Revolut)':''}${n.why?' · '+n.why:''}`).join('\n')+`\nTotal : ${eur(R.notes.reduce((s,n)=>s+n.amount,0))}`;
+  const t=`Mes achats notés, paie du ${fmtD(R.c.start)} → ${fmtD(R.c.next)} :\n`+[...R.notes].reverse().map(n=>`- ${new Date(n.at).toLocaleDateString('fr-FR')} · ${n.cat} · ${n.dir==='in'?'+ ':''}${eur(n.amount)}${n.acct==='revolut'?' (Revolut)':''}${n.why?' · '+n.why:''}`).join('\n')+`\nDépensé : ${eur(R.notes.filter(n=>n.dir!=='in').reduce((s,n)=>s+n.amount,0))}`+(R.notes.some(n=>n.dir==='in')?`\nReçu : ${eur(R.notes.filter(n=>n.dir==='in').reduce((s,n)=>s+n.amount,0))}`:'');
   copy(t,'Notes copiées')});
 
 /* rafraîchir au retour sur l'appli (le jour a pu changer) */
