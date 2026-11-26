@@ -60,6 +60,9 @@ b.warn{font-weight:650}
 .big.neg{color:var(--neg)}
 .big.mut{color:var(--muted)}
 .per{display:block;font-size:14.5px;color:var(--ink-2)}
+.rest{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:15px;font-weight:600;color:var(--ink-2)}
+.rest b{font-size:20px;font-weight:760;color:var(--ink);font-variant-numeric:tabular-nums}
+.rest.neg b{color:var(--neg)}
 .per b{color:var(--ink)}
 .bar{display:block;height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:14px}
 .bar i{display:block;height:100%;border-radius:99px;background:var(--ac,var(--ink))}
@@ -525,14 +528,15 @@ function staleTxt(x,c){const b=x.bal,n=dayDiff(c.t,day0(new Date(b.at)));
   const before=b.at<c.start.getTime()&&x.a.kind!=='ep'&&!S.recs.some(r=>r.type==='in'&&r.acct===x.a.id);
   return before?'<b class="warn">Solde d\'avant la paie : recale-le</b>':`<span${n>=7?' class="warn"':''}>Recalé ${w}</span>`}
 function acctCard(x,isHero,c,extra){const a=x.a,has=x.solde!==null,neg=has&&x.reste<0,days=Math.max(1,c.days);
-  const pct=has&&x.solde>0?Math.max(0,Math.min(100,x.reste/x.solde*100)):0,lbl=isHero?'Tu peux dépenser':'Restera après le prévu';
+  const pct=has&&x.solde>0?Math.max(0,Math.min(100,x.reste/x.solde*100)):0,lbl='Solde'+(x.n?' estimé':''),rl=isHero?'Tu peux dépenser':'Restera après le prévu';
   return `<article class="acct${isHero?' hero':''}" style="${col(a.id)}">
     <button class="acct-main" type="button" data-acct="${esc(a.id)}">
       <span class="acct-name"><i class="dot"></i><span>${esc(a.name)}</span></span><span class="acct-lbl">${lbl}</span>
-      ${has?`<span class="big${neg?' neg':''}">${eur(x.reste)}</span>
+      ${has?`<span class="big${x.solde<0?' neg':''}">${eur(x.solde)}</span>
+        <span class="rest${neg?' neg':''}">${rl} <b>${eur(x.reste)}</b></span>
         ${isHero?`<span class="per">${neg?`paie le ${fmtD(c.next,{day:'numeric',month:'long'})}, dans ${c.days} jour${c.days>1?'s':''}`:`soit <b>${eur(x.reste/days)}</b> par jour pendant ${c.days} jour${c.days>1?'s':''}`}</span>`:''}
         <span class="bar${neg?' neg':''}" aria-hidden="true"><i style="width:${neg?100:pct.toFixed(1)}%"></i></span>
-        <span class="split"><span>Solde${x.n?' estimé':''} <b>${eur(x.solde)}</b></span>${x.out?`<span>À venir <b>− ${eur(x.out)}</b></span>`:''}${x.inn?`<span>Attendu <b>+ ${eur(x.inn)}</b></span>`:''}${!x.out&&!x.inn?'<span>Rien de prévu d\'ici la paie</span>':''}</span>`
+        <span class="split">${x.out?`<span>À venir <b>− ${eur(x.out)}</b></span>`:''}${x.inn?`<span>Attendu <b>+ ${eur(x.inn)}</b></span>`:''}${!x.out&&!x.inn?'<span>Rien de prévu d\'ici la paie</span>':''}</span>`
       :`<span class="big mut">— €</span><span class="per">Indique le solde de ce compte pour le savoir.</span>`}
     </button>${extra||''}
     <div class="acct-foot"><span>${has?staleTxt(x,c):''}</span><button class="btn ${has?'ghost ':''}sm" type="button" data-bal="${esc(a.id)}">${has?'Recaler':'Indiquer le solde'}</button></div></article>`}
